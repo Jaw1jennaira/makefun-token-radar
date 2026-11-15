@@ -9,6 +9,12 @@
   if (!DATA) return;
   var app = document.getElementById('board');
   var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null, watchlistOnly: false };
+  // A farm plan is "complete" only when every input the plan's own steps use is on
+  // record: a known age, a known seven-day move, at least one chain, and a category.
+  // Rows missing any of those still get a plan — the page fills the gap with a stated
+  // fallback — but the toggle below hides them, so a farmer can start from the rows
+  // whose plan needs no guessing at all.
+  state.planOnly = false;
   var WATCHLIST = {};
   (DATA.watchlist || []).forEach(function (s) { WATCHLIST[s] = true; });
 
@@ -29,6 +35,32 @@
     if (days >= 365) return (days / 365).toFixed(1) + 'y';
     return Math.max(0, Math.round(days)) + 'd';
   }
+  // Implied value per dollar of TVL: the efficiency view. A small protocol with a
+  // strong multiple can outrank a giant on this number while sitting far down the
+  // main board, which is exactly the row a farmer with little capital wants first.
+  function perTvlOf(r) {
+    if (!r.tvl_usd || r.tvl_usd <= 0) return 0;
+    return r.implied_value_usd / r.tvl_usd;
+  }
+  function fmtRatio(x) {
+    if (x === null || x === undefined || !isFinite(x)) return 'n/a';
+    return x.toFixed(2) + 'x';
+  }
+  function planComplete(r) {
+    return r.age_days !== null && r.age_days !== undefined &&
+      r.change_7d !== null && r.change_7d !== undefined &&
+      (r.chains || []).length > 0 && !!r.category;
+  }
+  // What a partial plan is missing, in the page's own words, so the detail dialog can
+  // say which fallback each step leans on instead of hiding the gap.
+  function planGaps(r) {
+    var gaps = [];
+    if (r.age_days === null || r.age_days === undefined) gaps.push('age is unlisted, so the hold uses the 30-day fallback');
+    if (r.change_7d === null || r.change_7d === undefined) gaps.push('seven-day growth is unlisted, so growth counts as flat');
+    if (!(r.chains || []).length) gaps.push('no chain is listed, so the plan names no chain');
+    if (!r.category) gaps.push('no category is listed, so the plan uses the generic action');
+    return gaps;
+  }
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
   // impliedOf is the radar-2 model: TVL x category multiple x growth x maturity x chain reach.
@@ -40,6 +72,30 @@
     var chainMult = row.chain_multiplier === undefined ? 1 : row.chain_multiplier;
     var catMult = row.category_multiple === undefined ? DATA.overall_multiple : row.category_multiple;
     return Math.max(1, Math.round(row.tvl_usd * catMult * growthMult * maturity * chainMult));
+  }
+  // Calibration warnings, computed from the snapshot's own numbers, never hard-coded:
+  // a category whose multiple sits on the model's cap or floor is being held back by
+  // the clamp, and one backed by only a handful of live protocols is thin evidence.
+  // Risk Curators is the loudest case on this board — a 2.975x raw median held to the
+  // 0.60x cap — but the code below finds whichever categories qualify, so the warning
+  // stays true if the next snapshot calibrates differently.
+  function categoryEntry(category) {
+    var found = (DATA.category_multiples || []).filter(function (c) { return c.category === category; })[0];
+    return found || null;
+  }
+  function clampInfo(entry, m) {
+    if (!entry) return { clamped: null, thin: false };
+    var clamped = null;
+    if (entry.multiple >= m.multiple_cap) clamped = 'cap';
+    else if (entry.multiple <= m.multiple_floor) clamped = 'floor';
+    return { clamped: clamped, thin: entry.live_count < 3 };
+  }
+  function clampNote(entry, m) {
+    var info = clampInfo(entry, m);
+    if (info.clamped === 'cap') return 'clamped to the ' + m.multiple_cap.toFixed(2) + 'x cap';
+    if (info.clamped === 'floor') return 'clamped to the ' + m.multiple_floor.toFixed(2) + 'x floor';
+    if (info.thin) return 'thin data: only ' + entry.live_count + ' live comparable' + (entry.live_count === 1 ? '' : 's');
+    return '—';
   }
 
   function el(tag, attrs) {
@@ -148,6 +204,7 @@
     var q = state.q.trim().toLowerCase();
     return DATA.rows.filter(function (r) {
       if (state.watchlistOnly && !WATCHLIST[r.slug]) return false;
+      if (state.planOnly && !planComplete(r)) return false;
       if (state.category !== 'all' && r.category !== state.category) return false;
       if (state.chain !== 'all' && !(r.chains || []).some(function (c) { return c === state.chain; })) return false;
       if (!q) return true;
@@ -163,6 +220,7 @@
       else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
       else if (key === 'growth') { av = a.change_7d === null ? -Infinity : a.change_7d; bv = b.change_7d === null ? -Infinity : b.change_7d; }
       else if (key === 'age') { av = a.age_days === null ? Infinity : a.age_days; bv = b.age_days === null ? Infinity : b.age_days; }
+      else if (key === 'perTvl') { av = perTvlOf(a); bv = perTvlOf(b); }
       else { av = a.implied_value_usd; bv = b.implied_value_usd; }
       if (av < bv) return -state.dir;
       if (av > bv) return state.dir;
@@ -211,6 +269,24 @@
     );
   }
 
+  // The efficiency board: the five rows whose implied value buys the most per dollar
+  // of TVL. Rank on the main board rewards size; this one rewards the multiple, so a
+  // small, fast-growing protocol can lead here while sitting deep in the main list.
+  // Each card opens the same detail dialog as its row, so the two boards never drift.
+  function topEfficiency() {
+    var top = DATA.rows.slice().sort(function (a, b) { return perTvlOf(b) - perTvlOf(a) || a.rank - b.rank; }).slice(0, 5);
+    return el('section', { class: 'picks efficiency', 'aria-label': 'Most implied value per dollar of TVL' },
+      top.map(function (r) {
+        return el('button', { type: 'button', class: 'pick', onclick: function () { openDetail(r.slug); } },
+          el('span', { class: 'rank', text: 'PER $ TVL · ' + fmtRatio(perTvlOf(r)) }),
+          el('b', { text: r.name }),
+          el('span', { class: 'val', text: fmtUsd(r.implied_value_usd) }),
+          el('span', { class: 'meta', text: (r.category || 'Other') + ' · TVL ' + fmtUsd(r.tvl_usd) + ' · board #' + r.rank })
+        );
+      })
+    );
+  }
+
   function controls() {
     var categories = Array.from(new Set(DATA.rows.map(function (r) { return r.category || 'Other'; }))).sort();
     var chains = Array.from(new Set(DATA.rows.reduce(function (acc, r) { return acc.concat(r.chains || []); }, []))).sort();
@@ -229,12 +305,13 @@
     var pre = el('button', { type: 'button', 'aria-pressed': state.tab === 'pre-token' ? 'true' : 'false', text: 'Pre-token', onclick: function () { state.tab = 'pre-token'; render(); } });
     var live = el('button', { type: 'button', 'aria-pressed': state.tab === 'live' ? 'true' : 'false', text: 'Live token', onclick: function () { state.tab = 'live'; render(); } });
     var wl = el('button', { type: 'button', 'aria-pressed': state.watchlistOnly ? 'true' : 'false', text: 'Watchlist only', onclick: function () { state.watchlistOnly = !state.watchlistOnly; render(); } });
+    var plan = el('button', { type: 'button', 'aria-pressed': state.planOnly ? 'true' : 'false', text: 'Farm plan complete only', onclick: function () { state.planOnly = !state.planOnly; render(); } });
     return el('div', { class: 'controls' },
       el('div', { class: 'field' }, el('label', { for: 'q', text: 'Search' }), search),
       el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), catSelect),
       el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), chainSelect),
       el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live)),
-      el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Scope' }), el('div', { class: 'tabs' }, wl)),
+      el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Scope' }), el('div', { class: 'tabs' }, wl, plan)),
       el('span', { class: 'count', text: state.tab === 'pre-token' ? rows().length + ' rows shown' : DATA.live.length + ' live-token protocols' })
     );
   }
@@ -254,7 +331,7 @@
       return el('div', { class: 'panel' }, el('div', { class: 'empty' },
         el('h2', { text: 'No protocol matches that filter' }),
         el('p', { text: 'Clear the search or pick another category or chain to see the board again.' }),
-        el('button', { class: 'button primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watchlistOnly = false; writeHash(); render(); } })
+        el('button', { class: 'button primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watchlistOnly = false; state.planOnly = false; writeHash(); render(); } })
       ));
     }
     var max = list[0].implied_value_usd || 1;
@@ -280,6 +357,7 @@
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
           el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
         )),
+        el('td', { class: 'num', text: fmtRatio(perTvlOf(r)) }),
         el('td', null, el('span', { class: 'status', text: 'no token' }))
       );
       tbody.appendChild(tr);
@@ -295,6 +373,7 @@
             sortHeader('growth', '7d'),
             sortHeader('age', 'Age'),
             sortHeader('implied', 'Implied value'),
+            sortHeader('perTvl', 'Implied / $TVL'),
             el('th', { scope: 'col', text: 'Token' })
           )),
           tbody
@@ -357,9 +436,21 @@
         el('td', { text: c.category }),
         el('td', { class: 'num', text: c.multiple.toFixed(3) + 'x' }),
         el('td', { class: 'num', text: String(c.live_count) }),
-        el('td', { class: 'num', text: c.median_raw === null ? 'n/a' : c.median_raw.toFixed(3) + 'x' })
+        el('td', { class: 'num', text: c.median_raw === null ? 'n/a' : c.median_raw.toFixed(3) + 'x' }),
+        el('td', { text: clampNote(c, m) })
       ));
     });
+    // One line per category the clamp or the thin evidence touches, in plain words,
+    // so the board never quietly leans on a multiple the snapshot barely supports.
+    var warnings = (DATA.category_multiples || []).map(function (c) {
+      var info = clampInfo(c, m);
+      if (!info.clamped && !info.thin) return null;
+      var bits = c.category + ': the multiple used is ' + c.multiple.toFixed(3) + 'x';
+      if (info.clamped === 'cap') bits += ', held to the ' + m.multiple_cap.toFixed(2) + 'x cap although the raw median of its live comparables is ' + (c.median_raw === null ? 'unlisted' : c.median_raw.toFixed(3) + 'x');
+      if (info.clamped === 'floor') bits += ', held to the ' + m.multiple_floor.toFixed(2) + 'x floor although the raw median of its live comparables is ' + (c.median_raw === null ? 'unlisted' : c.median_raw.toFixed(3) + 'x');
+      bits += ', backed by only ' + c.live_count + ' live comparable' + (c.live_count === 1 ? '' : 's');
+      return bits + ' — treat its implied values as the least certain on this board.';
+    }).filter(function (w) { return w !== null; });
     return el('section', { class: 'panel model' },
       el('h2', { text: 'How implied value is computed' }),
       el('p', { text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The market does not price every kind of protocol alike, so each category gets its own TVL multiple, calibrated from the live-token protocols in this snapshot: the median market-cap-to-TVL of that category, shrunk toward the overall median of ' + DATA.overall_multiple + 'x (prior weight ' + m.prior_weight + ') and clamped to ' + m.multiple_floor + 'x-' + m.multiple_cap + 'x, so one wild outlier cannot decide a whole board.' }),
@@ -367,6 +458,10 @@
         'implied = round( tvl_usd x category_multiple x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.chain_step + ' x min(chains - 1, ' + m.chain_max_extra + ')) )'
       ),
       el('p', { text: 'TVL and seven-day growth come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. The chain term rewards reach across chains. The early radar is every pre-token protocol below the watchlist floor, by TVL, and the live-token protocols are set aside with their market caps shown.' }),
+      warnings.length ? el('div', { class: 'warn' },
+        el('h3', { text: 'Calibration warnings: thin or clamped categories' }),
+        el('ul', null, warnings.map(function (w) { return el('li', { text: w }); }))
+      ) : null,
       el('h3', { text: 'Category multiples used (top 12 by multiple)' }),
       el('div', { class: 'table-wrap' },
         el('table', null,
@@ -374,7 +469,8 @@
             el('th', { scope: 'col', text: 'Category' }),
             el('th', { scope: 'col', text: 'Multiple used' }),
             el('th', { scope: 'col', text: 'Live comparables' }),
-            el('th', { scope: 'col', text: 'Raw median' })
+            el('th', { scope: 'col', text: 'Raw median' }),
+            el('th', { scope: 'col', text: 'Note' })
           )),
           compBody
         )
@@ -414,6 +510,22 @@
       ),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(impliedOf(row, DATA.model)) + (impliedOf(row, DATA.model) === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price, and the protocol records no token: it may still have one the snapshot does not carry.' })
     ));
+    var entry = categoryEntry(row.category);
+    var cal = entry ? clampInfo(entry, DATA.model) : { clamped: null, thin: false };
+    var gaps = planGaps(row);
+    var calText = null;
+    if (cal.clamped || cal.thin) {
+      calText = 'Calibration warning: ' + (row.category || 'this category') + "'s multiple is " + clampNote(entry, DATA.model);
+      if (cal.clamped === 'cap' && entry.median_raw !== null) calText += ' — the raw median of its live comparables is ' + entry.median_raw.toFixed(3) + 'x, far above the cap';
+      calText += '. Its implied value leans on thin calibration, so rank it below rows with the same value from a well-backed category.';
+    }
+    dialog.appendChild(el('section', { class: 'detail-section' },
+      el('h3', { text: 'How much to trust this row' }),
+      el('p', { class: 'sub', text: gaps.length === 0
+        ? 'Farm plan complete: age, seven-day growth, chain and category are all on record, so no step leans on a fallback.'
+        : 'Farm plan partial: ' + gaps.join('; ') + '.' }),
+      calText ? el('p', { class: 'warn inline', text: calText }) : null
+    ));
     dialog.appendChild(el('section', { class: 'detail-section' },
       el('h3', { text: 'Farm plan' }),
       el('ol', { class: 'steps' }, steps.map(function (s) {
@@ -436,6 +548,7 @@
     shell.appendChild(header());
     shell.appendChild(lede());
     if (state.tab === 'pre-token') shell.appendChild(picks());
+    if (state.tab === 'pre-token') shell.appendChild(topEfficiency());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
     if (state.tab === 'pre-token') {

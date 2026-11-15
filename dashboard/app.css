@@ -195,3 +195,17 @@ dialog.detail::backdrop { background: rgba(20, 32, 26, 0.45); }
   .chart-row { grid-template-columns: 130px 1fr 90px; }
   .equation { grid-template-columns: 1fr; }
 }
+
+/* Efficiency board: the same cards as Farm first; the green label marks the other ranking. */
+.picks.efficiency { margin-bottom: var(--step-4); }
+.picks.efficiency .rank { color: var(--accent); }
+/* Calibration warnings: an amber callout, in the model panel and the detail dialog. */
+.warn {
+  background: var(--amber-soft); border: 1px solid #e3cd9a; border-radius: var(--radius-control);
+  padding: var(--step-3) var(--step-4); margin-bottom: var(--step-4);
+}
+.warn h3 { margin-bottom: var(--step-2); }
+.warn ul { margin: 0; padding-left: 20px; display: grid; gap: var(--step-1); }
+.warn li { font-size: 14px; }
+.warn.inline { margin: var(--step-3) 0 0; }
+.model .warn p, .detail-section .warn { font-size: 14px; }
