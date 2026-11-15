@@ -129,6 +129,7 @@ td.num, th.num { text-align: right; }
   background: var(--accent-soft); color: var(--accent); white-space: nowrap;
 }
 .status.live { background: var(--amber-soft); color: var(--amber); }
+.scope-note { color: var(--muted); font-size: 12px; }
 .empty { padding: var(--step-6); text-align: center; display: grid; gap: var(--step-2); justify-items: center; }
 .button {
   padding: 10px var(--step-5); border-radius: var(--radius-control); border: 1px solid var(--border);

@@ -42,7 +42,8 @@ with the vendored `vendor/makefun-board.ts`.
 
 `dashboard/` is a static page with no network: `index.html`, `app.css`, `app.js`, fed
 by `data.js`. It has a sortable board, search, category and chain filters, a pre-token /
-live-token switch, a "Farm first" top-5 strip, a category chart of total implied value,
+live-token switch, a "Watchlist only" scope toggle (every row is labelled watchlist or
+early so the floor is visible), a "Farm first" top-5 strip, a category chart of total implied value,
 a methodology panel with the calibrated multiples, and a detail dialog per protocol
 with the model's own inputs and a seven-step farm plan (action, cost, time).
 

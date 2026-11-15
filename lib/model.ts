@@ -174,6 +174,7 @@ export interface RadarData {
   live_size: number;
   overall_multiple: number;
   category_multiples: CategoryMultiple[];
+  watchlist: string[];
   rows: RadarRow[];
   live: LiveRow[];
 }
@@ -497,6 +498,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     live_size: live.length,
     overall_multiple: calibrated.overall,
     category_multiples: categoryMultiples,
+    watchlist: snapshot.watchlist,
     rows: board.map(radarRow),
     live,
   };
