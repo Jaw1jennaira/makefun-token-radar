@@ -5,7 +5,7 @@ protocol universe, ranks the protocols that record no token by what their launch
 be worth, and hands in a web dashboard with the board, a detail view for every protocol,
 and the steps to farm each one.
 
-## The model (radar-2)
+## The model (radar-3)
 
 Implied value follows only from the snapshot's own figures:
 
@@ -23,10 +23,26 @@ toward the overall median (prior weight 6) and clamped to 0.05x–0.60x, so one 
 outlier cannot decide a whole board. No protocol name is special-cased; the multiples
 the run used are shown in the dashboard's methodology panel.
 
+Radar-3 also tightens what counts as a launch. The watchlist's own rule leaves out
+wrapped, staked and bridged products of a token that already trades, and radar-2 only
+applied half of that rule — its board ranked 48 bridges, liquid-staking and staking
+products (Ink Bridge, Polygon zkEVM Bridge, Definity Staked SOL) that are not protocols
+waiting on a launch of their own. Radar-3 applies the whole rule to the early rows too:
+no Bridge, Canonical Bridge, Liquid Staking, Liquid Restaking, Restaked BTC or CEX
+category, no versioned name, no whole word wrapped, staked or staking, and no name
+beginning with an exchange's name.
+
+Every row also carries a confidence score (how complete its record is, and how many
+live comparables back its multiple), a value thesis and a profile written from its own
+figures, its rank inside its category, and the signals the thesis rests on. The farm
+plan is derived the same way — the action, the weekly rhythm, the check and the hold
+all change with the category, the chain and the seven-day trend — never from a
+hand-written list of names.
+
 The board covers all 40 watchlist protocols (TVL ≥ $50M, no token on record) and adds
-260 pre-token protocols below the floor, by TVL — 300 rows. Live-token protocols are
-set aside with their market caps shown, never mixed into the ranking. "No token" means
-the snapshot records none, not that the protocol has none.
+138 pre-token protocols below the floor — 178 rows, $4.97B of total implied value.
+Live-token protocols are set aside with their market caps shown, never mixed into the
+ranking. "No token" means the snapshot records none, not that the protocol has none.
 
 ## Run it
 
@@ -41,11 +57,15 @@ with the vendored `vendor/makefun-board.ts`.
 ## Dashboard
 
 `dashboard/` is a static page with no network: `index.html`, `app.css`, `app.js`, fed
-by `data.js`. It has a sortable board, search, category and chain filters, a pre-token /
-live-token switch, a "Watchlist only" scope toggle (every row is labelled watchlist or
-early so the floor is visible), a "Farm first" top-5 strip, a category chart of total implied value,
-a methodology panel with the calibrated multiples, and a detail dialog per protocol
-with the model's own inputs and a seven-step farm plan (action, cost, time).
+by `data.js`. It has a sortable board (rank, TVL, 7d, age, implied value, implied per
+$TVL, confidence), search, category and chain filters, a pre-token / live-token switch,
+a "Watchlist only" scope toggle and a "Farm plan complete only" toggle (every row is
+labelled watchlist or early so the floor is visible), a top-5 strip that follows the
+current filter with a Farm-first / Best-per-$TVL switch, a category chart of total
+implied value, a fastest-growers list, a methodology panel with the calibrated
+multiples and its warnings, and a detail dialog per protocol with its profile, value
+thesis, signals, confidence, the model's own inputs and a seven-step farm plan
+(action, cost, time).
 
 ## License
 
