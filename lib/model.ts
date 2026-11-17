@@ -775,69 +775,69 @@ function gasNote(chain: string): string {
   return 'about $1-3 of gas on this chain';
 }
 
-/** The category's one action, in the words a farmer can follow. */
+/** The category's one action, in the words a farmer can follow — one short command. */
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
-  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Supply $${capital} of USDC to ${name} on ${chain} and borrow a small amount against it to show both sides of the market.`;
-  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Provide $${capital} of liquidity to ${name}'s main pool on ${chain} and keep the position open through at least one fee cycle.`;
-  if (c.includes('bridge')) return `Bridge $${capital} of USDC to ${chain} through ${name} and use the bridged funds in its app instead of bridging straight back.`;
-  if (c.includes('staking') || c.includes('restak')) return `Stake $${capital} of the chain's staking asset through ${name} and keep the receipt token in the same wallet.`;
-  if (c.includes('perpetual') || c.includes('derivative') || c.includes('options')) return `Deposit $${capital} of USDC as margin on ${name} and open one small hedged position, then close it after a week.`;
-  if (c.includes('prediction')) return `Fund $${capital} and place one market position on ${name}, then settle it instead of leaving it open.`;
-  if (c.includes('curator') || c.includes('allocator') || c.includes('risk')) return `Deposit $${capital} into a ${name} vault on ${chain} and keep the shares so the vault's own accounting credits your wallet.`;
-  if (c.includes('stable')) return `Mint or deposit $${capital} of the stable asset through ${name} on ${chain} and hold it for the full qualifying window.`;
-  if (c.includes('rwa')) return `Mint $${capital} of the protocol's yield-bearing asset on ${chain} and hold it; the yield itself is the on-chain receipt.`;
-  if (c.includes('insurance')) return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy active for the whole window.`;
-  if (c.includes('launchpad')) return `Stake $${capital} into ${name}'s launch allocation on ${chain} and join one sale or allocation round.`;
-  if (c.includes('ai') || c.includes('agent')) return `Deposit $${capital} into ${name} on ${chain} and run one agent task or inference so the wallet shows real usage.`;
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Supply $${capital} of USDC to ${name} on ${chain} and borrow a little against it.`;
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Provide $${capital} of liquidity to ${name}'s main pool on ${chain} and hold it through one fee cycle.`;
+  if (c.includes('bridge')) return `Bridge $${capital} of USDC to ${chain} through ${name} and use the funds in its app.`;
+  if (c.includes('staking') || c.includes('restak')) return `Stake $${capital} through ${name} and keep the receipt token in the same wallet.`;
+  if (c.includes('perpetual') || c.includes('derivative') || c.includes('options')) return `Deposit $${capital} of USDC as margin on ${name} and open one small hedged position.`;
+  if (c.includes('prediction')) return `Fund $${capital} and place one market position on ${name}, then settle it.`;
+  if (c.includes('curator') || c.includes('allocator') || c.includes('risk')) return `Deposit $${capital} into a ${name} vault on ${chain} and keep the shares.`;
+  if (c.includes('stable')) return `Mint or deposit $${capital} of the stable asset through ${name} on ${chain} and hold it.`;
+  if (c.includes('rwa')) return `Mint $${capital} of the yield-bearing asset on ${chain} and hold it.`;
+  if (c.includes('insurance')) return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy active.`;
+  if (c.includes('launchpad')) return `Stake $${capital} into ${name}'s launch allocation on ${chain} and join one round.`;
+  if (c.includes('ai') || c.includes('agent')) return `Deposit $${capital} into ${name} on ${chain} and run one agent task.`;
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
-/** The weekly action, in the category's own terms: a DEX farmer swaps, a lender rebalances. */
+/** The weekly action, in the category's own terms — one short line. */
 function weeklyActionFor(p: SnapshotProtocol): string {
   const c = (p.category ?? '').toLowerCase();
   if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm') || c.includes('liquidity manager')) {
-    return 'Swap or rebalance once a week, so the wallet shows steady use rather than one burst.';
+    return 'Swap or rebalance once a week, so the wallet shows steady use.';
   }
   if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) {
-    return 'Adjust your supply or borrow once a week, so the wallet shows steady use rather than one burst.';
+    return 'Adjust your supply or borrow once a week, so the wallet shows steady use.';
   }
   if (c.includes('curator') || c.includes('allocator') || c.includes('risk')) {
-    return 'Check the vault allocation once a week and top up or rebalance a little, so the wallet shows steady use rather than one burst.';
+    return 'Check the vault allocation once a week and top up a little.';
   }
-  if (c.includes('rwa')) return 'Check the yield accrual once a week and add a small top-up, so the wallet shows steady use rather than one burst.';
+  if (c.includes('rwa')) return 'Check the yield accrual once a week and add a small top-up.';
   if (c.includes('derivative') || c.includes('perpetual') || c.includes('options') || c.includes('basis')) {
-    return 'Open and close one small hedged position each week, so the wallet shows steady use rather than one burst.';
+    return 'Open and close one small hedged position each week.';
   }
-  if (c.includes('prediction')) return 'Settle one market position each week, so the wallet shows steady use rather than one burst.';
+  if (c.includes('prediction')) return 'Settle one market position each week.';
   if (c.includes('staking') || c.includes('restak')) {
-    return 'Check the staking rewards once a week and compound or top up a little, so the wallet shows steady use rather than one burst.';
+    return 'Check staking rewards once a week and compound a little.';
   }
-  if (c.includes('stable')) return 'Move a little of the stable asset through the protocol once a week, so the wallet shows steady use rather than one burst.';
-  return 'Make one qualifying action each week, such as a deposit, a swap or a vote, so the wallet shows steady use rather than one burst.';
+  if (c.includes('stable')) return 'Move a little of the stable asset through the protocol once a week.';
+  return 'Make one qualifying action each week: a deposit, a swap or a vote.';
 }
 
-/** The weekly check, in the category's own terms: a vault has a points page, a pool has a rewards page. */
+/** The weekly check, in the category's own terms — one short line. */
 function checkFor(p: SnapshotProtocol): string {
   const c = (p.category ?? '').toLowerCase();
   if (c.includes('curator') || c.includes('allocator') || c.includes('risk')) {
-    return `Check ${p.name}'s vault points page once a week and finish any free task it lists, such as a social task or an allocation quest.`;
+    return `Check ${p.name}'s vault points page weekly and finish any free task it lists.`;
   }
   if (c.includes('dex') || c.includes('yield') || c.includes('liquidity manager')) {
-    return `Check ${p.name}'s pool rewards and points page once a week and finish any free task it lists, such as a social task or a fee milestone.`;
+    return `Check ${p.name}'s pool rewards and points page weekly and finish any free task it lists.`;
   }
   if (c.includes('rwa')) {
-    return `Check ${p.name}'s yield and points page once a week and finish any free task it lists, such as a social task or a holding milestone.`;
+    return `Check ${p.name}'s yield and points page weekly and finish any free task it lists.`;
   }
-  return `Check ${p.name}'s own points, quests or rewards page once a week and finish any free task it lists, such as a social task or a testnet action.`;
+  return `Check ${p.name}'s points, quests or rewards page weekly and finish any free task it lists.`;
 }
 
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
- * from the protocol's own record (category, chains, TVL, age, seven-day growth), never from a
- * hand-written list of names: the action, the weekly rhythm, the check and the hold all change with
- * the category, the chain and the trend.
+ * A protocol's farm plan: seven steps, each one short command with a cost and a time
+ * (one to two lines per step in the detail view — the plan must fit one viewport).
+ * The plan is derived from the protocol's own record (category, chains, TVL, age,
+ * seven-day growth), never from a hand-written list of names.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
@@ -847,14 +847,14 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const growth = Math.min(MODEL.growth_cap, Math.max(MODEL.growth_floor, finite(p.change_7d, 0)));
   const trend =
     growth >= 10
-      ? ` TVL is up ${growth.toFixed(1)}% in seven days, so enter now and hold through the window.`
+      ? ` TVL is up ${growth.toFixed(1)}% in seven days — enter now.`
       : growth <= -10
-        ? ` TVL is down ${Math.abs(growth).toFixed(1)}% in seven days, so size in gradually and hold through the window.`
+        ? ` TVL is down ${Math.abs(growth).toFixed(1)}% in seven days — size in gradually.`
         : '';
-  const secondChain = p.chains.length > 1 ? ` Repeat the same position on ${p.chains[1]} so both deployments credit the wallet.` : '';
+  const secondChain = p.chains.length > 1 ? ` Repeat on ${p.chains[1]} so both deployments credit the wallet.` : '';
   return [
     {
-      text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline on paper, never in a screenshot.`,
+      text: `Open a fresh wallet for this farm only; keep its seed phrase on paper, never in a screenshot.`,
       cost: gas + ' for the first transaction',
       time: '5 minutes',
     },
@@ -869,7 +869,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '10 minutes a week',
     },
     {
-      text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot window.${trend}`,
+      text: `Hold the position for at least ${hold} days so the activity spans more than one snapshot window.${trend}`,
       cost: `the $${capital} stays in the position`,
       time: `${hold} days`,
     },
@@ -879,12 +879,12 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '10 minutes a week',
     },
     {
-      text: `Before you withdraw, open the protocol's own points page and claim only from the link it publishes; never pay a fee to claim and never sign a blind approval.`,
+      text: `Claim only from the protocol's own published link; never pay a fee to claim and never sign a blind approval.`,
       cost: 'no fee to check, and never pay to claim',
       time: '10 minutes',
     },
     {
-      text: `Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it without guessing.`,
+      text: `Log the wallet, the dates and every transaction hash so you can repeat or unwind the position.`,
       cost: 'nothing but the log',
       time: '5 minutes',
     },
