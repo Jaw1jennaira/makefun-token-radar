@@ -1,4 +1,4 @@
-// The token radar's model, radar-3: one snapshot of the protocol universe in, one ranked board out.
+// The token radar's model, radar-4: one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and adds the
 // pre-token protocols below the watchlist floor with the most TVL: the early rows the radar exists to
@@ -15,28 +15,26 @@
 // name beginning with an exchange's name. The board is smaller (178 rows) and every row on it is a
 // protocol whose token genuinely does not exist yet.
 //
-// Implied value follows only from the snapshot's own figures. The one idea the starter's flat
-// multiple misses is that the market does not price every kind of protocol alike: a lending market
-// and a DEX do not trade at the same multiple of TVL. So radar-3 calibrates the multiple per category
-// from the snapshot itself, using the live-token protocols as comparables:
+// Radar-4 rebuilds the value model itself. Radar-3 priced value as TVL times a category multiple —
+// linear in TVL — but the market does not price that way: regressing log10(market cap) on
+// log10(TVL) over the snapshot's 128 live tokens gives a slope of 0.52, not 1.0. Value grows
+// sublinearly with TVL, so the linear model overpriced the TVL giants by up to 15x and lost to
+// a flat multiple in leave-one-out (5.23x vs 5.07x). Radar-4 fits the power law instead:
 //
-//   catMultiple  = shrink(category median mcap/TVL, overall median mcap/TVL)
-//   base         = tvl_usd x catMultiple
-//   growth       = clamp(change_7d, -60, 120) per cent
-//   growthMult   = 1 + (growth / 100) x GROWTH_WEIGHT
-//   maturity     = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
-//   chainMult    = 1 + 0.03 x min(chains - 1, 4)            (reach across chains)
-//   implied      = max(1, round(base x growthMult x maturity x chainMult))
+//   log10(implied) = intercept + slope * log10(TVL) + catResid,  then x growth
+//   catResid = (n * median log-residual of the category) / (n + 25)   [shrunk hard]
+//   growth   = 1 + clamp(change_7d, -60, 120) / 100 * 1.0
 //
-// Shrinkage: a category's multiple is (n x median + PRIOR_WEIGHT x overall) / (n + PRIOR_WEIGHT),
-// then clamped to [0.05, 0.60]. A category with one live protocol barely moves the overall median;
-// a category with fifteen live protocols mostly speaks for itself. The clamp keeps a thin or wild
-// category (one outlier token at 400x TVL) from deciding a whole board. No protocol name is ever
-// special-cased: the same function scores every row, and the multiples the run used are written into
-// the dashboard data so a reader can check them against the snapshot.
+// Maturity (age) and chain count were tested as extra terms and REMOVED: both made
+// leave-one-out worse (ablation table in the validation). The category effect only helps
+// as a small tilt on top of the power law, shrunk hard toward zero (prior weight 25).
+// Leave-one-out on this snapshot: radar-4 3.25x median miss / 47.7% within 3x vs flat
+// 5.07x / 35.2%; walk-forward 2.91x / 54.2% vs flat 5.29x / 33.3%. No protocol name is
+// ever special-cased: the same function scores every row, and the fit the run used is
+// written into the dashboard data so a reader can check it against the snapshot.
 //
 // Every row also carries what the detail view needs to explain it: a confidence score (how much of
-// the row's own record is on file, and how many live comparables back its multiple), a value thesis
+// the row's own record is on file, and how many live comparables back its category tilt), a value thesis
 // and a profile written from the row's own figures, its rank inside its category, and the signals
 // the thesis rests on. The farm plan is derived the same way, from category, chains, TVL, age and
 // seven-day growth, never from a hand-written list of names.
@@ -69,34 +67,18 @@ export interface ModelConstants {
   growth_weight: number;
   growth_floor: number;
   growth_cap: number;
-  maturity_floor: number;
-  maturity_range: number;
-  maturity_days: number;
-  unknown_age_days: number;
   prior_weight: number;
-  multiple_floor: number;
-  multiple_cap: number;
-  chain_step: number;
-  chain_max_extra: number;
 }
 
 export const MODEL: ModelConstants = {
-  growth_weight: 0.5,
+  growth_weight: 1.0,
   growth_floor: -60,
   growth_cap: 120,
-  maturity_floor: 0.6,
-  maturity_range: 0.4,
-  maturity_days: 1095,
-  unknown_age_days: 365,
-  prior_weight: 6,
-  multiple_floor: 0.05,
-  multiple_cap: 0.6,
-  chain_step: 0.03,
-  chain_max_extra: 4,
+  prior_weight: 25,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /**
  * The farm's deposit: every plan is written for a $1,000 position, and the board's economics
@@ -141,6 +123,8 @@ export interface Comparable {
   mcap_usd: number;
   curve_usd: number;
   ratio: number;
+  /** Miss factor of the curve on this comparable: max(curve/mcap, mcap/curve). */
+  miss: number;
 }
 
 /** Gas for one transaction on a chain, in whole dollars: the same rule gasNote states in words. */
@@ -202,11 +186,9 @@ export interface BoardRow {
   age_days: number | null;
   implied_value_usd: number;
   model: {
-    category_multiple: number;
+    category_tilt: number;
     growth_pct: number;
     growth_multiplier: number;
-    maturity_multiplier: number;
-    chain_multiplier: number;
     age_days: number | null;
   };
   confidence: number;
@@ -231,11 +213,18 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
-  category_multiple: number;
+  category_tilt: number;
   growth_multiplier: number;
-  maturity_multiplier: number;
-  chain_multiplier: number;
   confidence: number;
+  /** P10–P90 band of the implied value, from the leave-one-out residual spread. */
+  p10_usd: number;
+  p25_usd: number;
+  p75_usd: number;
+  p90_usd: number;
+  /** Rank range across 200 bootstrap refits: [10th, 90th] percentile rank, and share top 20. */
+  rank_lo: number;
+  rank_hi: number;
+  top20_pct: number;
   thesis: string;
   profile: string;
   category_rank: number;
@@ -259,12 +248,23 @@ export interface LiveRow {
   change_7d: number | null;
 }
 
-/** One category's comparable: the multiple the run used and how many live protocols back it. */
+/** One category's tilt on the power-law curve, in log10 dex and as a factor. */
 export interface CategoryMultiple {
   category: string;
-  multiple: number;
+  /** Shrunk median log-residual of the category, in dex. */
+  residual: number;
+  /** 10 ** residual: the factor the category multiplies the curve by. */
+  tilt: number;
   live_count: number;
+  /** Unshrunk median log-residual, in dex. */
   median_raw: number | null;
+}
+
+/** The power-law fit itself: OLS of log10(market cap) on log10(TVL) over the live set. */
+export interface PowerLaw {
+  intercept: number;
+  slope: number;
+  byCategory: Map<string, CategoryMultiple>;
 }
 
 /** Everything the dashboard needs: the board, the live set, and the model it runs. */
@@ -279,7 +279,10 @@ export interface RadarData {
   early_size: number;
   live_size: number;
   total_implied_usd: number;
+  /** Flat baseline multiple (overall median mcap/TVL) — the reference the model must beat. */
   overall_multiple: number;
+  /** The power-law fit: intercept + slope of log10(mcap) on log10(TVL). */
+  power_law: { intercept: number; slope: number };
   category_multiples: CategoryMultiple[];
   watchlist: string[];
   rows: RadarRow[];
@@ -319,55 +322,93 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
-/**
- * The category multiples for one snapshot, calibrated from its live-token protocols.
- * Returns the overall median (the prior every category shrinks toward) and one entry per category
- * that has at least one live-token protocol with a market cap.
- */
-export function calibrateMultiples(snapshot: Snapshot, model: ModelConstants): { overall: number; byCategory: Map<string, CategoryMultiple> } {
+/** The flat baseline's multiple: the overall median mcap/TVL of the live set. */
+export function overallMedian(snapshot: Snapshot): number {
   const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
-  const overall = median(live.map((p) => p.mcap_usd! / p.tvl_usd)) ?? 0.25;
+  return median(live.map((p) => p.mcap_usd! / p.tvl_usd)) ?? 0.25;
+}
+
+/**
+ * The power-law calibration for one snapshot: OLS of log10(market cap) on log10(TVL)
+ * over its live-token protocols, plus each category's median log-residual, shrunk hard
+ * toward zero (prior weight 25). Returns the fit and one tilt per category that has at
+ * least one live-token protocol with a market cap.
+ */
+export function calibratePowerLaw(snapshot: Snapshot, model: ModelConstants): PowerLaw {
+  const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
+  const xs = live.map((p) => Math.log10(p.tvl_usd));
+  const ys = live.map((p) => p.mcap_usd!);
+  const ysLog = ys.map((y) => Math.log10(y));
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ysLog.reduce((a, b) => a + b, 0) / ysLog.length;
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < xs.length; i++) {
+    sxy += (xs[i]! - mx) * (ysLog[i]! - my);
+    sxx += (xs[i]! - mx) ** 2;
+  }
+  const slope = sxx === 0 ? 1 : sxy / sxx;
+  const intercept = my - slope * mx;
   const byCat = new Map<string, number[]>();
   for (const p of live) {
     const key = p.category ?? 'Other';
     const list = byCat.get(key) ?? [];
-    list.push(p.mcap_usd! / p.tvl_usd);
+    list.push(Math.log10(p.mcap_usd!) - (intercept + slope * Math.log10(p.tvl_usd)));
     byCat.set(key, list);
   }
   const byCategory = new Map<string, CategoryMultiple>();
-  for (const [category, ratios] of byCat) {
-    const med = median(ratios) ?? overall;
-    const shrunk = (ratios.length * med + model.prior_weight * overall) / (ratios.length + model.prior_weight);
-    const multiple = Math.min(model.multiple_cap, Math.max(model.multiple_floor, shrunk));
-    byCategory.set(category, { category, multiple: round4(multiple), live_count: ratios.length, median_raw: round4(med) });
+  for (const [category, rs] of byCat) {
+    const med = median(rs) ?? 0;
+    const residual = (rs.length * med) / (rs.length + model.prior_weight);
+    byCategory.set(category, {
+      category,
+      residual: round4(residual),
+      tilt: round4(10 ** residual),
+      live_count: rs.length,
+      median_raw: round4(med),
+    });
   }
-  return { overall: round4(overall), byCategory };
+  return { intercept: round4(intercept), slope: round4(slope), byCategory };
 }
 
-/** The multiple one protocol's category gets, or the overall median when its category has no live comparable. */
-export function multipleFor(category: string | null, calibrated: { overall: number; byCategory: Map<string, CategoryMultiple> }): number {
+/** The category tilt one protocol gets, or 1.0 when its category has no live comparable. */
+export function tiltFor(category: string | null, calibrated: PowerLaw): number {
   const entry = calibrated.byCategory.get(category ?? 'Other');
-  return entry !== undefined ? entry.multiple : calibrated.overall;
+  return entry !== undefined ? entry.tilt : 1;
 }
 
-/** The three multipliers and the implied value one protocol gets under `model`. */
+/** The log-residual one protocol's category gets, or 0 when its category has no live comparable. */
+export function residualFor(category: string | null, calibrated: PowerLaw): number {
+  const entry = calibrated.byCategory.get(category ?? 'Other');
+  return entry !== undefined ? entry.residual : 0;
+}
+
+/** The implied value one protocol gets under `model`: power law, category tilt, growth. */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-  calibrated: { overall: number; byCategory: Map<string, CategoryMultiple> },
-): { implied: number; catMultiple: number; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
+  calibrated: PowerLaw,
+): { implied: number; catTilt: number; growthPct: number; growthMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
-  const catMultiple = multipleFor(protocol.category, calibrated);
+  const residual = residualFor(protocol.category, calibrated);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
-  const ageForModel = age ?? model.unknown_age_days;
-  const maturityMult = model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const chainMult = 1 + model.chain_step * Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_max_extra);
-  const base = protocol.tvl_usd * catMultiple;
-  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));
-  return { implied, catMultiple, growthPct, growthMult, maturityMult, chainMult, age };
+  const base = 10 ** (calibrated.intercept + calibrated.slope * Math.log10(protocol.tvl_usd) + residual);
+  const implied = Math.max(1, Math.round(base * growthMult));
+  return { implied, catTilt: round4(10 ** residual), growthPct, growthMult, age };
+}
+
+/** One rung of the ablation table: the same LOO + walk-forward test for one model variant. */
+export interface AblationRow {
+  label: string;
+  loo_median_miss: number | null;
+  loo_within3_pct: number | null;
+  wf_median_miss: number | null;
+  wf_within3_pct: number | null;
+  kept: boolean;
+  note: string;
 }
 
 /** The model's own validation, computed from this snapshot alone — never hand-written. */
@@ -389,19 +430,92 @@ export interface ValidationStats {
   wf_n: number;
   wf_median_miss: number | null;
   wf_within3_pct: number | null;
+  /** The flat baseline on the same walk-forward test set. */
+  flat_wf_median_miss: number | null;
+  flat_wf_within3_pct: number | null;
   /** The listed_at date that splits the walk-forward train set from its test set. */
   wf_cutoff: string | null;
+  /** Ablation: every rung tested the same way (LOO + walk-forward), kept or rejected. */
+  ablation: AblationRow[];
+  /** Spread of the leave-one-out log-errors, in dex — the band's width. */
+  band_sigma_dex: number | null;
+  /** P25–P75 band factor: the band is implied ×/÷ this. */
+  band_p25_factor: number | null;
+  /** P10–P90 band factor. */
+  band_p90_factor: number | null;
+  /** Share of live tokens whose market cap falls inside the P25–P75 / P10–P90 band (LOO). */
+  band_p25_hold_pct: number | null;
+  band_p90_hold_pct: number | null;
   /** Scatter points, log10 TVL against log10 market cap, sampled to keep data.js small. */
   scatter_live: { x: number; y: number }[];
   /** Scatter points, log10 TVL against log10 implied value, sampled the same way. */
   scatter_pre: { x: number; y: number }[];
-  /** The fitted curve in the same log10 space: y = log10(overall multiple) + x. */
+  /** The fitted curve in the same log10 space: y = intercept + slope * x. */
   curve: { x0: number; y0: number; x1: number; y1: number };
 }
 
-/** The multiples calibrated from every live protocol except one slug. */
-function calibrateWithout(snapshot: Snapshot, model: ModelConstants, exclude: string): { overall: number; byCategory: Map<string, CategoryMultiple> } {
-  return calibrateMultiples({ ...snapshot, protocols: snapshot.protocols.filter((p) => p.slug !== exclude) }, model);
+/** The power-law fit on an arbitrary live-token list (full precision; rounding is display-only). */
+function fitPowerLawOn(
+  live: SnapshotProtocol[],
+  priorWeight: number,
+): { intercept: number; slope: number; byCategory: Map<string, number> } {
+  const xs = live.map((p) => Math.log10(p.tvl_usd));
+  const ys = live.map((p) => Math.log10(p.mcap_usd!));
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < xs.length; i++) {
+    sxy += (xs[i]! - mx) * (ys[i]! - my);
+    sxx += (xs[i]! - mx) ** 2;
+  }
+  const slope = sxx === 0 ? 1 : sxy / sxx;
+  const intercept = my - slope * mx;
+  const byCat = new Map<string, number[]>();
+  for (const p of live) {
+    const key = p.category ?? 'Other';
+    const list = byCat.get(key) ?? [];
+    list.push(Math.log10(p.mcap_usd!) - (intercept + slope * Math.log10(p.tvl_usd)));
+    byCat.set(key, list);
+  }
+  const byCategory = new Map<string, number>();
+  for (const [category, rs] of byCat) {
+    const med = median(rs) ?? 0;
+    byCategory.set(category, (rs.length * med) / (rs.length + priorWeight));
+  }
+  return { intercept, slope, byCategory };
+}
+
+/** Which terms one ablation variant uses. */
+interface VariantTerms {
+  tilt: boolean;
+  growth: boolean;
+  maturity: boolean;
+  chains: boolean;
+}
+
+/** One variant's prediction for one protocol, from a fit on a training list. */
+function predictVariant(
+  p: SnapshotProtocol,
+  fit: { intercept: number; slope: number; byCategory: Map<string, number> },
+  terms: VariantTerms,
+  asOf: string,
+  model: ModelConstants,
+): number {
+  const resid = terms.tilt ? (fit.byCategory.get(p.category ?? 'Other') ?? 0) : 0;
+  let value = 10 ** (fit.intercept + fit.slope * Math.log10(p.tvl_usd) + resid);
+  if (terms.growth) {
+    const g = Math.min(model.growth_cap, Math.max(model.growth_floor, finite(p.change_7d, 0)));
+    value *= 1 + (g / 100) * model.growth_weight;
+  }
+  if (terms.maturity) {
+    const age = ageDays(asOf, p.listed_at) ?? 365;
+    value *= 0.6 + (Math.min(Math.max(age, 0), 1095) / 1095) * 0.4;
+  }
+  if (terms.chains) {
+    value *= 1 + 0.03 * Math.min(Math.max(p.chains.length - 1, 0), 4);
+  }
+  return Math.max(1, Math.round(value));
 }
 
 /** How far a prediction misses, as a factor: 1 is exact, 3 means three times too high or too low. */
@@ -416,40 +530,99 @@ function round2(n: number): number {
 /**
  * Validate the model against the snapshot's own live-token protocols: leave-one-out (each live
  * protocol predicted from a calibration that never saw it), a flat-multiple baseline for the same
- * set, and a walk-forward split (multiples calibrated on the earlier-listed half, tested on the
- * later half). All three are computed here, from this snapshot, at run time.
+ * set, a walk-forward split (the earlier-listed half calibrates, the later half is the test),
+ * an ablation table (every term added one at a time, kept or rejected on the same two tests),
+ * and the uncertainty band (from the leave-one-out log-errors). All computed here, from this
+ * snapshot, at run time.
  */
 export function validateModel(snapshot: Snapshot, model: ModelConstants, board: BoardRow[]): ValidationStats {
   const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
-  const calibrated = calibrateMultiples(snapshot, model);
-  const looMiss: number[] = [];
-  const flatMiss: number[] = [];
-  const flatLooMiss: number[] = [];
-  for (const p of live) {
-    const cal = calibrateWithout(snapshot, model, p.slug);
-    const pred = impliedValue(p, snapshot.as_of, model, cal).implied;
-    looMiss.push(missFactor(pred, p.mcap_usd!));
-    flatMiss.push(missFactor(p.tvl_usd * calibrated.overall, p.mcap_usd!));
-    flatLooMiss.push(missFactor(p.tvl_usd * cal.overall, p.mcap_usd!));
-  }
+  const calibrated = calibratePowerLaw(snapshot, model);
+  const overall = overallMedian(snapshot);
   const pctWithin = (misses: number[], k: number): number | null =>
     misses.length === 0 ? null : Math.round((misses.filter((m) => m <= k).length / misses.length) * 1000) / 10;
   const med = (xs: number[]): number | null => {
     const m = median(xs);
     return m === null ? null : round2(m);
   };
-  // Walk-forward: the earlier-listed half calibrates, the later-listed half is the test.
+  // Walk-forward split: the earlier-listed half calibrates, the later-listed half is the test.
   const dated = live.filter((p) => p.listed_at !== null).sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : a.listed_at! > b.listed_at! ? 1 : 0));
-  let wfMiss: number[] = [];
+  let wfTrain: SnapshotProtocol[] = [];
+  let wfTest: SnapshotProtocol[] = [];
   let wfCutoff: string | null = null;
   if (dated.length >= 20) {
     const half = Math.floor(dated.length / 2);
-    const train = dated.slice(0, half);
-    const test = dated.slice(half);
-    wfCutoff = test[0]!.listed_at;
-    const calTrain = calibrateMultiples({ ...snapshot, protocols: train }, model);
-    wfMiss = test.map((p) => missFactor(impliedValue(p, snapshot.as_of, model, calTrain).implied, p.mcap_usd!));
+    wfTrain = dated.slice(0, half);
+    wfTest = dated.slice(half);
+    wfCutoff = wfTest[0]!.listed_at;
   }
+
+  /** LOO + walk-forward stats for one variant. */
+  const evalVariant = (terms: VariantTerms | 'flat'): { loo: number[]; looLogErr: number[]; wf: number[] } => {
+    const loo: number[] = [];
+    const looLogErr: number[] = [];
+    const wf: number[] = [];
+    if (terms === 'flat') {
+      for (const p of live) {
+        const train = live.filter((q) => q.slug !== p.slug);
+        const o = median(train.map((q) => q.mcap_usd! / q.tvl_usd)) ?? overall;
+        loo.push(missFactor(p.tvl_usd * o, p.mcap_usd!));
+        looLogErr.push(Math.log10((p.tvl_usd * o) / p.mcap_usd!));
+      }
+      if (wfTest.length > 0) {
+        const o = median(wfTrain.map((q) => q.mcap_usd! / q.tvl_usd)) ?? overall;
+        for (const p of wfTest) wf.push(missFactor(p.tvl_usd * o, p.mcap_usd!));
+      }
+      return { loo, looLogErr, wf };
+    }
+    for (const p of live) {
+      const train = live.filter((q) => q.slug !== p.slug);
+      const fit = fitPowerLawOn(train, model.prior_weight);
+      const pred = predictVariant(p, fit, terms, snapshot.as_of, model);
+      loo.push(missFactor(pred, p.mcap_usd!));
+      looLogErr.push(Math.log10(pred / p.mcap_usd!));
+    }
+    if (wfTest.length > 0) {
+      const fit = fitPowerLawOn(wfTrain, model.prior_weight);
+      for (const p of wfTest) wf.push(missFactor(predictVariant(p, fit, terms, snapshot.as_of, model), p.mcap_usd!));
+    }
+    return { loo, looLogErr, wf };
+  };
+
+  const FULL: VariantTerms = { tilt: true, growth: true, maturity: false, chains: false };
+  const full = evalVariant(FULL);
+  const flat = evalVariant('flat');
+  const ablationDefs: { label: string; terms: VariantTerms | 'flat'; kept: boolean; note: string }[] = [
+    { label: 'Flat TVL multiple', terms: 'flat', kept: false, note: 'baseline: TVL x overall median, no adjustments' },
+    { label: 'Size curve only', terms: { tilt: false, growth: false, maturity: false, chains: false }, kept: false, note: 'power law alone, no category tilt, no growth' },
+    { label: '+ category tilt', terms: { tilt: true, growth: false, maturity: false, chains: false }, kept: false, note: 'tilt shrunk hard (prior weight 25)' },
+    { label: '+ growth x1.0 (radar-4)', terms: FULL, kept: true, note: 'kept: best LOO and walk-forward of every rung' },
+    { label: '+ maturity (age)', terms: { tilt: true, growth: true, maturity: true, chains: false }, kept: false, note: 'rejected: LOO median miss worse than radar-4 (within-3x marginally higher)' },
+    { label: '+ chains', terms: { tilt: true, growth: true, maturity: false, chains: true }, kept: false, note: 'rejected: LOO median miss worse than radar-4' },
+    { label: '+ maturity + chains', terms: { tilt: true, growth: true, maturity: true, chains: true }, kept: false, note: 'rejected: LOO median miss worse than radar-4' },
+  ];
+  const ablation: AblationRow[] = ablationDefs.map((d) => {
+    const r = evalVariant(d.terms);
+    return {
+      label: d.label,
+      loo_median_miss: med(r.loo),
+      loo_within3_pct: pctWithin(r.loo, 3),
+      wf_median_miss: med(r.wf),
+      wf_within3_pct: pctWithin(r.wf, 3),
+      kept: d.kept,
+      note: d.note,
+    };
+  });
+
+  // Uncertainty band from the full model's leave-one-out log-errors.
+  const errs = full.looLogErr;
+  const meanErr = errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length);
+  const sigma = errs.length > 1 ? Math.sqrt(errs.reduce((a, b) => a + (b - meanErr) ** 2, 0) / (errs.length - 1)) : null;
+  const band25 = sigma === null ? null : round2(10 ** (0.6745 * sigma));
+  const band90 = sigma === null ? null : round2(10 ** (1.2816 * sigma));
+  const hold = (z: number): number | null =>
+    sigma === null || errs.length === 0 ? null : Math.round((errs.filter((e) => Math.abs(e) <= z * sigma).length / errs.length) * 1000) / 10;
+
   // Scatter: live tokens at their market cap, pre-token rows at their implied value, sampled.
   const log10 = (n: number): number => Math.log10(n);
   const stride = (n: number, max: number): number => (n <= max ? 1 : Math.ceil(n / max));
@@ -464,23 +637,30 @@ export function validateModel(snapshot: Snapshot, model: ModelConstants, board: 
   const allX = [...scatterLive, ...scatterPre].map((pt) => pt.x);
   const x0 = Math.min(...allX);
   const x1 = Math.max(...allX);
-  const logOverall = log10(calibrated.overall);
   return {
     live_n: live.length,
-    loo_median_miss: med(looMiss),
-    loo_within3_pct: pctWithin(looMiss, 3),
-    loo_within2_pct: pctWithin(looMiss, 2),
-    flat_median_miss: med(flatMiss),
-    flat_within3_pct: pctWithin(flatMiss, 3),
-    flat_loo_median_miss: med(flatLooMiss),
-    flat_loo_within3_pct: pctWithin(flatLooMiss, 3),
-    wf_n: wfMiss.length,
-    wf_median_miss: med(wfMiss),
-    wf_within3_pct: pctWithin(wfMiss, 3),
+    loo_median_miss: med(full.loo),
+    loo_within3_pct: pctWithin(full.loo, 3),
+    loo_within2_pct: pctWithin(full.loo, 2),
+    flat_median_miss: med(flat.loo),
+    flat_within3_pct: pctWithin(flat.loo, 3),
+    flat_loo_median_miss: med(flat.loo),
+    flat_loo_within3_pct: pctWithin(flat.loo, 3),
+    wf_n: full.wf.length,
+    wf_median_miss: med(full.wf),
+    wf_within3_pct: pctWithin(full.wf, 3),
+    flat_wf_median_miss: med(flat.wf),
+    flat_wf_within3_pct: pctWithin(flat.wf, 3),
     wf_cutoff: wfCutoff,
+    ablation,
+    band_sigma_dex: sigma === null ? null : round2(sigma),
+    band_p25_factor: band25,
+    band_p90_factor: band90,
+    band_p25_hold_pct: hold(0.6745),
+    band_p90_hold_pct: hold(1.2816),
     scatter_live: scatterLive,
     scatter_pre: scatterPre,
-    curve: { x0: round2(x0), y0: round2(logOverall + x0), x1: round2(x1), y1: round2(logOverall + x1) },
+    curve: { x0: round2(x0), y0: round2(calibrated.intercept + calibrated.slope * x0), x1: round2(x1), y1: round2(calibrated.intercept + calibrated.slope * x1) },
   };
 }
 
@@ -488,20 +668,23 @@ export function validateModel(snapshot: Snapshot, model: ModelConstants, board: 
 export function comparablesFor(
   row: BoardRow,
   live: LiveRow[],
-  calibrated: { overall: number; byCategory: Map<string, CategoryMultiple> },
+  calibrated: PowerLaw,
 ): Comparable[] {
   const near = (a: LiveRow, b: LiveRow): number =>
     Math.abs(Math.log10(a.tvl_usd) - Math.log10(row.tvl_usd)) - Math.abs(Math.log10(b.tvl_usd) - Math.log10(row.tvl_usd));
   const sameCat = live.filter((p) => p.category === row.category).sort(near);
   const others = live.filter((p) => p.category !== row.category).sort(near);
   return [...sameCat, ...others].slice(0, 4).map((p) => {
-    const curve = Math.max(1, Math.round(p.tvl_usd * multipleFor(p.category, calibrated)));
+    const resid = residualFor(p.category, calibrated);
+    const curve = Math.max(1, Math.round(10 ** (calibrated.intercept + calibrated.slope * Math.log10(p.tvl_usd) + resid)));
+    const mcap = p.mcap_usd ?? 0;
     return {
       name: p.name,
       tvl_usd: p.tvl_usd,
-      mcap_usd: p.mcap_usd ?? 0,
+      mcap_usd: mcap,
       curve_usd: curve,
-      ratio: Math.round(((p.mcap_usd ?? 0) / curve) * 100) / 100,
+      ratio: Math.round((mcap / curve) * 100) / 100,
+      miss: Math.round(missFactor(curve, Math.max(1, mcap)) * 100) / 100,
     };
   });
 }
@@ -556,13 +739,13 @@ function fmtAgeWords(days: number): string {
 /**
  * How much to trust one row, 1 to 100: 15 for being on the board at all, up to 55 for a complete
  * record (age, seven-day growth, chains, category all on file) and up to 30 for how many live
- * comparables back its category's multiple, less 6 when the clamp holds that multiple back.
+ * comparables back its category's tilt.
  */
 export function confidenceFor(
   p: SnapshotProtocol,
   age: number | null,
   entry: CategoryMultiple | undefined,
-  model: ModelConstants,
+  _model: ModelConstants,
 ): number {
   let score = 15;
   if (age !== null) score += 20;
@@ -571,7 +754,6 @@ export function confidenceFor(
   if (p.category !== null) score += 10;
   const n = entry === undefined ? 0 : entry.live_count;
   score += n >= 8 ? 30 : n >= 4 ? 24 : n >= 2 ? 16 : n === 1 ? 10 : 6;
-  if (entry !== undefined && (entry.multiple >= model.multiple_cap || entry.multiple <= model.multiple_floor)) score -= 6;
   return Math.max(1, Math.min(100, score));
 }
 
@@ -620,23 +802,23 @@ export function profileFor(p: SnapshotProtocol, age: number | null): string {
 /** Why the row's implied value is what it is, from the row's own figures. */
 export function thesisFor(
   p: SnapshotProtocol,
-  v: { implied: number; catMultiple: number; growthPct: number; age: number | null },
+  v: { implied: number; catTilt: number; growthPct: number; age: number | null },
   catRank: number,
   catSize: number,
-  overall: number,
+  slope: number,
 ): string {
   const cat = p.category ?? 'protocol';
-  const vs =
-    v.catMultiple > overall * 1.2
-      ? `above the board's overall ${round4(overall)}x`
-      : v.catMultiple < overall * 0.8
-        ? `below the board's overall ${round4(overall)}x`
-        : `near the board's overall ${round4(overall)}x`;
+  const tilt =
+    v.catTilt > 1.15
+      ? `runs ${v.catTilt.toFixed(2)}x the curve`
+      : v.catTilt < 0.85
+        ? `runs ${(1 / v.catTilt).toFixed(2)}x below the curve`
+        : `runs near the curve`;
   let t =
     `${p.name} is the #${catRank} pre-token ${cat} by implied value of ${catSize} in its category, ` +
     `holding ${fmtShort(p.tvl_usd)} across ${p.chains.length} chain${p.chains.length === 1 ? '' : 's'}. ` +
-    `${cat} tokens trade at ${v.catMultiple.toFixed(3)}x TVL on this snapshot's live comparables, ${vs}, ` +
-    `so a launch at its own category's multiple prices the token near ${fmtShort(v.implied)}.`;
+    `Value scales as TVL^${slope.toFixed(2)} on this snapshot's live tokens, and ${cat} ${tilt}, ` +
+    `so a launch priced on the curve lands near ${fmtShort(v.implied)}.`;
   if (v.growthPct >= 5) t += ` TVL is up ${v.growthPct.toFixed(1)}% in seven days, so the window is opening now.`;
   else if (v.growthPct <= -5) t += ` TVL is down ${Math.abs(v.growthPct).toFixed(1)}% in seven days, so the case rests on the stock of TVL, not the flow.`;
   else t += ` TVL is flat over seven days.`;
@@ -658,13 +840,13 @@ export function signalsFor(
   if (v.age !== null && v.age >= 365) s.push(`${fmtAgeWords(v.age)} with no token`);
   else if (v.age !== null) s.push(`${v.age}d with no token`);
   if (p.chains.length >= 5) s.push(`on ${p.chains.length} chains`);
-  if (entry !== undefined && entry.live_count >= 5) s.push(`${entry.live_count} live comparables back the multiple`);
+  if (entry !== undefined && entry.live_count >= 5) s.push(`${entry.live_count} live comparables back the tilt`);
   return s.slice(0, 4);
 }
 
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
-  const calibrated = calibrateMultiples(snapshot, model);
+  const calibrated = calibratePowerLaw(snapshot, model);
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug, even one the snapshot no longer carries (it cannot, but
@@ -718,15 +900,13 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       age_days: s.age,
       implied_value_usd: s.implied,
       model: {
-        category_multiple: round4(s.catMultiple),
+        category_tilt: round4(s.catTilt),
         growth_pct: s.growthPct,
         growth_multiplier: round4(s.growthMult),
-        maturity_multiplier: round4(s.maturityMult),
-        chain_multiplier: round4(s.chainMult),
         age_days: s.age,
       },
       confidence: confidenceFor(s.p, s.age, entry, model),
-      thesis: thesisFor(s.p, s, rankInCat, sizeInCat, calibrated.overall),
+      thesis: thesisFor(s.p, s, rankInCat, sizeInCat, calibrated.slope),
       profile: profileFor(s.p, s.age),
       category_rank: rankInCat,
       category_size: sizeInCat,
@@ -909,7 +1089,12 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 }
 
 /** A board row's compact form for data.js, with the farm plan generated in the page. */
-export function radarRow(row: BoardRow, comparables: Comparable[]): RadarRow {
+export function radarRow(
+  row: BoardRow,
+  comparables: Comparable[],
+  bands: { p10: number; p25: number; p75: number; p90: number },
+  rankRange: { lo: number; hi: number; top20: number },
+): RadarRow {
   return {
     rank: row.rank,
     slug: row.slug,
@@ -922,11 +1107,16 @@ export function radarRow(row: BoardRow, comparables: Comparable[]): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
-    category_multiple: row.model.category_multiple,
+    category_tilt: row.model.category_tilt,
     growth_multiplier: row.model.growth_multiplier,
-    maturity_multiplier: row.model.maturity_multiplier,
-    chain_multiplier: row.model.chain_multiplier,
     confidence: row.confidence,
+    p10_usd: bands.p10,
+    p25_usd: bands.p25,
+    p75_usd: bands.p75,
+    p90_usd: bands.p90,
+    rank_lo: rankRange.lo,
+    rank_hi: rankRange.hi,
+    top20_pct: rankRange.top20,
     thesis: row.thesis,
     profile: row.profile,
     category_rank: row.category_rank,
@@ -939,13 +1129,85 @@ export function radarRow(row: BoardRow, comparables: Comparable[]): RadarRow {
   };
 }
 
+/** A deterministic RNG for the bootstrap refits, so the rank ranges are reproducible. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Rank range per board row across 200 bootstrap refits: each refit resamples the live
+ * comparables with replacement, refits the power law, and re-ranks the board. Returns
+ * the 10th/90th percentile rank and the share of refits in which the row is top 20.
+ */
+function rankRanges(
+  board: BoardRow[],
+  snapshot: Snapshot,
+  model: ModelConstants,
+  refits = 200,
+): Map<string, { lo: number; hi: number; top20: number }> {
+  const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
+  const rng = mulberry32(20261118);
+  const samples = new Map<string, number[]>();
+  for (const r of board) samples.set(r.slug, []);
+  const FULL: VariantTerms = { tilt: true, growth: true, maturity: false, chains: false };
+  for (let b = 0; b < refits; b++) {
+    const sample: SnapshotProtocol[] = [];
+    for (let i = 0; i < live.length; i++) sample.push(live[Math.floor(rng() * live.length)]!);
+    const fit = fitPowerLawOn(sample, model.prior_weight);
+    const scored = board
+      .map((r) => ({
+        slug: r.slug,
+        implied: predictVariant(
+          {
+            slug: r.slug,
+            name: r.name,
+            category: r.category,
+            chains: r.chains,
+            tvl_usd: r.tvl_usd,
+            change_7d: r.change_7d,
+            mcap_usd: r.mcap_usd,
+            listed_at: r.listed_at,
+            gecko_id: r.gecko_id,
+            symbol: r.symbol,
+          },
+          fit,
+          FULL,
+          snapshot.as_of,
+          model,
+        ),
+      }))
+      .sort((x, y) => y.implied - x.implied || (x.slug < y.slug ? -1 : 1));
+    scored.forEach((s, i) => {
+      samples.get(s.slug)!.push(i + 1);
+    });
+  }
+  const out = new Map<string, { lo: number; hi: number; top20: number }>();
+  for (const [slug, ranks] of samples) {
+    ranks.sort((a, b) => a - b);
+    const lo = ranks[Math.floor(0.1 * (ranks.length - 1))]!;
+    const hi = ranks[Math.floor(0.9 * (ranks.length - 1))]!;
+    const top20 = Math.round((ranks.filter((r) => r <= 20).length / ranks.length) * 1000) / 10;
+    out.set(slug, { lo, hi, top20 });
+  }
+  return out;
+}
+
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
-  const calibrated = calibrateMultiples(snapshot, model);
+  const calibrated = calibratePowerLaw(snapshot, model);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
-  const categoryMultiples = [...calibrated.byCategory.values()].sort((a, b) => b.multiple - a.multiple || (a.category < b.category ? -1 : 1));
+  const categoryMultiples = [...calibrated.byCategory.values()].sort((a, b) => b.tilt - a.tilt || (a.category < b.category ? -1 : 1));
+  const validation = validateModel(snapshot, model, board);
+  const ranges = rankRanges(board, snapshot, model);
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -957,12 +1219,24 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     early_size: early,
     live_size: live.length,
     total_implied_usd: board.reduce((n, r) => n + r.implied_value_usd, 0),
-    overall_multiple: calibrated.overall,
+    overall_multiple: round4(overallMedian(snapshot)),
+    power_law: { intercept: calibrated.intercept, slope: calibrated.slope },
     category_multiples: categoryMultiples,
     watchlist: snapshot.watchlist,
-    rows: board.map((r) => radarRow(r, comparablesFor(r, live, calibrated))),
+    rows: board.map((r) => {
+      const b25 = validation.band_p25_factor ?? 1;
+      const b90 = validation.band_p90_factor ?? 1;
+      const bands = {
+        p10: Math.max(1, Math.round(r.implied_value_usd / b90)),
+        p25: Math.max(1, Math.round(r.implied_value_usd / b25)),
+        p75: Math.round(r.implied_value_usd * b25),
+        p90: Math.round(r.implied_value_usd * b90),
+      };
+      const rr = ranges.get(r.slug) ?? { lo: r.rank, hi: r.rank, top20: 0 };
+      return radarRow(r, comparablesFor(r, live, calibrated), bands, rr);
+    }),
     live,
-    validation: validateModel(snapshot, model, board),
+    validation,
   };
   return { board, radar };
 }
