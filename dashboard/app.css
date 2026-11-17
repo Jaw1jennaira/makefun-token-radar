@@ -65,7 +65,7 @@ a { color: var(--accent); }
 
 /* Lede: one line of claim, one line of method, six facts in a row. */
 .lede { padding: var(--step-3) 0 var(--step-2); }
-.lede-main p { color: var(--muted); max-width: 110ch; margin-top: var(--step-1); font-size: 14px; }
+.lede-main p { color: var(--muted); margin-top: var(--step-1); font-size: 14px; }
 .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--step-3); margin-top: var(--step-2); }
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control);
@@ -75,9 +75,9 @@ a { color: var(--accent); }
 .stat b { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Methodology panel: formula, curve fit, validation, one honest verdict. */
-.method { padding: var(--step-5); margin-bottom: var(--step-3); }
-.method h2 { margin-bottom: var(--step-3); }
-.method-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr); gap: var(--step-5); }
+.method { padding: var(--step-4) var(--step-5); margin-bottom: var(--step-3); }
+.method h2 { margin-bottom: var(--step-2); }
+.method-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr); gap: var(--step-4); }
 .method-col h3 { margin-bottom: var(--step-2); }
 .method-steps { margin: 0 0 var(--step-3); padding-left: 20px; display: grid; gap: var(--step-2); font-size: 14px; }
 .method table { font-size: 13px; }
@@ -90,7 +90,7 @@ a { color: var(--accent); }
 .dot.live { background: var(--accent); }
 .dot.pre { background: var(--amber); }
 .dot.curve { background: var(--ink); border-radius: 0; width: 12px; height: 2px; vertical-align: middle; }
-.method-verdict { margin-top: var(--step-4); padding-top: var(--step-3); border-top: 1px solid var(--border); font-size: 15px; line-height: 1.6; max-width: 110ch; }
+.method-verdict { margin-top: var(--step-3); padding-top: var(--step-2); border-top: 1px solid var(--border); font-size: 15px; line-height: 1.6; max-width: 110ch; }
 /* Farm verdict pills and filter chips. */
 .verdict { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .verdict-worth { background: var(--accent-soft); color: var(--accent); }
@@ -106,7 +106,7 @@ a { color: var(--accent); }
 .detail-lede { padding-top: var(--step-3); }
 .detail-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr); gap: var(--step-4); margin-top: var(--step-4); }
 .detail-col { display: grid; gap: var(--step-4); align-content: start; }
-.detail-sec { padding: var(--step-5); }
+.detail-sec { padding: var(--step-4) var(--step-5); }
 .detail-sec h2 { margin-bottom: var(--step-1); }
 .detail-sec p { color: var(--muted); margin-bottom: var(--step-3); max-width: 72ch; font-size: 14px; }
 .detail-sec table { font-size: 13px; }
@@ -119,14 +119,14 @@ a { color: var(--accent); }
 .signals.flat { padding: 0; }
 
 .controls {
-  display: flex; flex-wrap: wrap; gap: var(--step-3); align-items: end;
+  display: flex; flex-wrap: wrap; gap: var(--step-2); align-items: end;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel);
   padding: var(--step-2) var(--step-4); margin-bottom: var(--step-3);
 }
 .field { display: grid; gap: var(--step-1); }
 .field label, .field .sub { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
 .field input, .field select {
-  padding: 8px var(--step-3); border: 1px solid var(--border); border-radius: var(--radius-control);
+  padding: 6px var(--step-3); border: 1px solid var(--border); border-radius: var(--radius-control);
   background: var(--surface);
 }
 .field input { width: 180px; }
@@ -134,7 +134,7 @@ a { color: var(--accent); }
 .field input:focus, .field select:focus { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
 .tabs { display: flex; gap: var(--step-1); }
 .tabs button {
-  padding: 8px var(--step-3); border: 1px solid var(--border); border-radius: var(--radius-control);
+  padding: 6px var(--step-3); border: 1px solid var(--border); border-radius: var(--radius-control);
   background: var(--surface-2); font-weight: 600; white-space: nowrap;
 }
 .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -211,7 +211,7 @@ td.num, th.num { text-align: right; }
 .formula {
   font-family: var(--font-num); font-size: 13px; background: var(--surface-2);
   border-radius: var(--radius-control); padding: var(--step-3) var(--step-4);
-  overflow-x: auto; white-space: nowrap; margin-bottom: var(--step-4);
+  overflow-wrap: break-word;
 }
 .model table { font-size: 13px; }
 .model thead th { padding: var(--step-2) var(--step-3); }

@@ -193,20 +193,19 @@
   }
 
   function lede() {
-    var v = DATA.validation || {};
     var worth = DATA.rows.filter(function (r) { return econAt(r, 1000).verdict === 'Worth farming'; }).length;
     var stat = function (label, value) { return el('div', { class: 'stat' }, el('span', { text: label }), el('b', { text: value })); };
     return el('section', { class: 'lede' },
       el('div', { class: 'lede-main' },
-        el('h1', { text: DATA.board_size + ' pre-token protocols, ranked by a walk-forward-tested value model' }),
-        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record, plus ' + DATA.early_size + ' pre-token protocols below it. Every row carries its farm math at a $1,000 deposit: the slice a launch would pay, the gas, the yield forgone, and the launch odds it needs to break even.' })
+        el('h1', { text: DATA.board_size + ' pre-token protocols, ranked by a tested value model' }),
+        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record, plus ' + DATA.early_size + ' below it — each row carries its farm math at a $1,000 deposit.' })
       ),
       el('div', { class: 'stats' },
         stat('Watchlist covered', DATA.watchlist_size + ' / ' + DATA.watchlist_size),
         stat('Pre-token rows scored', String(DATA.board_size)),
         stat('Total implied value', fmtUsd(DATA.total_implied_usd)),
         stat('Worth farming at $1,000', String(worth)),
-        stat('Median leave-one-out miss', v.loo_median_miss === null || v.loo_median_miss === undefined ? 'n/a' : v.loo_median_miss + 'x'),
+        stat('Overall market multiple', DATA.overall_multiple + 'x TVL'),
         stat('Live-token set aside', String(DATA.live_size))
       )
     );
@@ -217,11 +216,11 @@
   function methodology() {
     var v = DATA.validation || {};
     var m = DATA.model;
-    var formula = 'implied = round( tvl_usd x category_multiple x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.chain_step + ' x min(chains - 1, ' + m.chain_max_extra + ')) )';
-    var verdict = 'Tested leave-one-out on ' + v.live_n + ' live tokens, the model lands within 3x of the market cap ' + v.loo_within3_pct + '% of the time, median miss ' + v.loo_median_miss + 'x — about the same as a flat TVL multiple (' + v.flat_loo_median_miss + 'x). The walk-forward split (trained before ' + v.wf_cutoff + ', n=' + v.wf_n + ') gives the same picture: ' + v.wf_median_miss + 'x. The multiple is a rough compass, not a price. What this board adds is the farm math: fees, forgone yield and break-even per row, so a reader can see which rows survive a launch at all.';
+    var formula = 'implied = round(tvl_usd × category_multiple × (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ')/100 × ' + m.growth_weight + ') × (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ')/' + m.maturity_days + ' × ' + m.maturity_range + ') × (1 + ' + m.chain_step + ' × min(chains - 1, ' + m.chain_max_extra + ')))';
+    var verdict = 'The multiple is a rough compass, not a price; the board\u2019s edge is the farm math below.';
     // Log-log scatter: live tokens at their market cap, pre-token rows at their implied value,
     // against the fitted curve y = log10(overall multiple) + x.
-    var W = 340, H = 172, L = 34, R = 6, T = 6, B = 20;
+    var W = 340, H = 120, L = 34, R = 6, T = 6, B = 20;
     var curve = v.curve || { x0: 6, y0: 6, x1: 9, y1: 9 };
     var allY = (v.scatter_live || []).concat(v.scatter_pre || []).map(function (p) { return p.y; }).concat([curve.y0, curve.y1]);
     var y0 = Math.min.apply(null, allY) - 0.2, y1 = Math.max.apply(null, allY) + 0.2;
@@ -254,8 +253,8 @@
         el('div', { class: 'method-col' },
           el('h3', { text: 'The formula' }),
           el('ol', { class: 'method-steps' },
-            el('li', null, el('b', { text: 'Size curve. ' }), 'Each category\u2019s multiple is the median market cap per dollar of TVL among its live tokens, shrunk toward the overall median of ' + DATA.overall_multiple + 'x and clamped to ' + m.multiple_floor + 'x\u2013' + m.multiple_cap + 'x. A protocol\u2019s curve value is its TVL times its category multiple.'),
-            el('li', null, el('b', { text: 'Growth carry. ' }), 'The last seven days of TVL growth move the value up or down, capped at ' + m.growth_floor + '% to +' + m.growth_cap + '%, at weight ' + m.growth_weight + '.'),
+            el('li', null, el('b', { text: 'Size curve. ' }), 'Each category\u2019s multiple is the median market cap per $TVL among its live tokens, shrunk toward ' + DATA.overall_multiple + 'x, clamped to ' + m.multiple_floor + 'x\u2013' + m.multiple_cap + 'x.'),
+            el('li', null, el('b', { text: 'Growth carry. ' }), 'The last 7 days of TVL growth move the value, capped at ' + m.growth_floor + '% to +' + m.growth_cap + '%, at weight ' + m.growth_weight + '.'),
             el('li', null, el('b', { text: 'Seasoning and reach. ' }), 'A token-less year costs up to ' + Math.round((1 - m.maturity_floor) * 100) + '% of value; each extra chain adds ' + Math.round(m.chain_step * 100) + '%, up to ' + m.chain_max_extra + ' extra chains.')
           ),
           el('div', { class: 'formula' }, formula)
@@ -268,7 +267,7 @@
             el('span', { class: 'dot pre' }), ' Pre-token rows, at implied value  ',
             el('span', { class: 'dot curve' }), ' Fitted curve'
           ),
-          el('p', { class: 'sub', text: 'Both axes are log scale, $10M to $10B. A point on the dashed line is a protocol the curve prices exactly; most sit well off it — the multiple is a compass, not a price.' })
+          el('p', { class: 'sub', text: 'Both axes log scale. Points on the dashed line are priced exactly by the curve.' })
         ),
         el('div', { class: 'method-col' },
           el('h3', { text: 'The validation' }),
@@ -281,13 +280,13 @@
                 el('th', { scope: 'col', text: 'Within 2x' })
               )),
               el('tbody', null,
-                vrow('Leave-one-out, n=' + v.live_n, v.loo_median_miss, v.loo_within3_pct, v.loo_within2_pct),
-                vrow('Flat TVL multiple, same test', v.flat_loo_median_miss, v.flat_loo_within3_pct, null),
-                vrow('Walk-forward, trained before ' + v.wf_cutoff + ', n=' + v.wf_n, v.wf_median_miss, v.wf_within3_pct, null)
+                vrow('LOO n=' + v.live_n, v.loo_median_miss, v.loo_within3_pct, v.loo_within2_pct),
+                vrow('Flat TVL', v.flat_loo_median_miss, v.flat_loo_within3_pct, null),
+                vrow('Walk-fwd n=' + v.wf_n, v.wf_median_miss, v.wf_within3_pct, null)
               )
             )
           ),
-          el('p', { class: 'sub', text: 'Leave-one-out predicts each live token from a calibration that never saw it; walk-forward calibrates on the earlier-listed half and tests on the later half. Both are computed from this snapshot at run time.' })
+          el('p', { class: 'sub', text: 'LOO predicts each live token from a calibration that never saw it; walk-forward trains before ' + v.wf_cutoff + ', tests after.' })
         )
       ),
       el('p', { class: 'method-verdict', text: verdict })
@@ -397,7 +396,7 @@
         el('td', { class: 'num rank ' + rankClass, text: String(r.rank) }),
         el('td', null, el('div', { class: 'name' },
           el('b', { text: r.name }),
-          el('span', { class: 'sub', text: (r.category || 'Other') + ' on ' + (r.chains && r.chains.length ? r.chains.slice(0, 2).join(', ') : 'an unnamed chain') + ' · no token · ' + (WATCHLIST[r.slug] ? 'watchlist' : 'early') })
+          el('span', { class: 'sub', text: (r.category || 'Other') + ' on ' + (r.chains && r.chains.length ? r.chains.slice(0, 1).join(', ') : 'an unnamed chain') + ' · ' + (WATCHLIST[r.slug] ? 'watchlist' : 'early') })
         )),
         el('td', { class: 'num', text: fmtUsd(r.tvl_usd) }),
         el('td', { class: 'num ' + growthClass, text: growth }),
@@ -417,7 +416,7 @@
     return el('div', { class: 'panel' },
       el('div', { class: 'table-wrap' },
         el('table', null,
-          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest implied value first. Slice, net, break-even and net/hour are the farm math at a $' + state.deposit.toLocaleString('en-US') + ' deposit. Select a row for its full page: value decomposition, deposit-size table and farm plan.' }),
+          el('caption', { class: 'sub', text: 'Pre-token protocols, strongest first. Slice, net, break-even, net/hour: the farm math at a $' + state.deposit.toLocaleString('en-US') + ' deposit — select a row for its full page.' }),
           el('thead', null, el('tr', null,
             sortHeader('implied', 'Rank'),
             sortHeader('name', 'Protocol'),
