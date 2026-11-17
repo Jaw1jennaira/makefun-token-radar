@@ -98,6 +98,80 @@ export const MODEL: ModelConstants = {
 /** The model's version label: the dashboard names it and the rules quote it. */
 export const MODEL_VERSION = 'radar-3';
 
+/**
+ * The farm's deposit: every plan is written for a $1,000 position, and the board's economics
+ * are computed at that deposit (the dashboard offers a $10,000 view of the same numbers).
+ * One deposit for every row keeps the economics comparable across the board: the slice a
+ * launch pays depends on the row's own multiple, not on how much the plan sizes in.
+ */
+export const DEPOSIT_USD = 1000;
+/** The share of a launch's supply an airdrop is assumed to pay depositors, pro-rata by deposit share of TVL. */
+export const AIRDROP_SHARE = 0.1;
+/** The risk-free rate the yield-forgone leg uses, per year. */
+export const TBILL_RATE = 0.04;
+/**
+ * The active hours a 12-week farm plan takes: 15 minutes to set up, 10 minutes a week of
+ * actions and 10 minutes a week of checks for 12 weeks, 10 minutes to claim and 5 minutes
+ * to log, plus 5 minutes to open the fresh wallet.
+ */
+export const FARM_HOURS = 4.58;
+
+/** One row's farm economics at a stated deposit, all from the row's own figures. */
+export interface RowEconomics {
+  deposit_usd: number;
+  /** The airdrop slice if the token launches: deposit x implied/TVL x AIRDROP_SHARE. */
+  slice_usd: number;
+  /** Gas over the 12-week plan: setup plus one weekly action a week. */
+  fees_usd: number;
+  /** Yield forgone on the deposit at TBILL_RATE over the hold. */
+  forgone_usd: number;
+  /** slice - fees - forgone. */
+  net_usd: number;
+  /** Launch probability needed for the expected value to reach zero; null when the slice is zero. */
+  breakeven: number | null;
+  /** net_usd per active hour of the plan. */
+  net_per_hour_usd: number;
+  verdict: 'Worth farming' | 'Marginal' | 'Skip';
+}
+
+/** One live-token comparable for a row's detail view: what the curve says it is worth, against its market cap. */
+export interface Comparable {
+  name: string;
+  tvl_usd: number;
+  mcap_usd: number;
+  curve_usd: number;
+  ratio: number;
+}
+
+/** Gas for one transaction on a chain, in whole dollars: the same rule gasNote states in words. */
+export function gasUsd(chain: string): number {
+  const c = chain.toLowerCase();
+  if (c.includes('ethereum')) return 5;
+  if (c.includes('solana')) return 0.05;
+  if (c.includes('base') || c.includes('arbitrum') || c.includes('optimism') || c.includes('polygon') || c.includes('blast') || c.includes('mode')) return 0.25;
+  return 2;
+}
+
+/** A row's farm economics at one deposit, from the row's own figures and the stated assumptions above. */
+export function econFor(
+  p: SnapshotProtocol,
+  implied: number,
+  age: number | null,
+  deposit: number = DEPOSIT_USD,
+): RowEconomics {
+  const slice = p.tvl_usd > 0 ? deposit * (implied / p.tvl_usd) * AIRDROP_SHARE : 0;
+  const gas = gasUsd(chainOf(p));
+  const fees = Math.round((gas + 12 * gas) * 100) / 100;
+  const hold = holdDaysFor(age);
+  const forgone = Math.round(deposit * TBILL_RATE * (hold / 365) * 100) / 100;
+  const net = Math.round((slice - fees - forgone) * 100) / 100;
+  const breakeven = slice > 0 ? Math.round(((fees + forgone) / slice) * 1000) / 1000 : null;
+  const netPerHour = Math.round((net / FARM_HOURS) * 100) / 100;
+  const verdict: RowEconomics['verdict'] =
+    breakeven !== null && breakeven <= 0.25 && netPerHour >= 2 ? 'Worth farming' : net > 0 ? 'Marginal' : 'Skip';
+  return { deposit_usd: deposit, slice_usd: Math.round(slice * 100) / 100, fees_usd: fees, forgone_usd: forgone, net_usd: net, breakeven, net_per_hour_usd: netPerHour, verdict };
+}
+
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 260;
 
@@ -167,6 +241,11 @@ export interface RadarRow {
   category_rank: number;
   category_size: number;
   signals: string[];
+  economics: RowEconomics;
+  comparables: Comparable[];
+  /** The 12-week farm plan, as the model writes it to board.json — the dashboard reads it, it does not rebuild it. */
+  farm_steps: string[];
+  hold_days: number;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -205,6 +284,7 @@ export interface RadarData {
   watchlist: string[];
   rows: RadarRow[];
   live: LiveRow[];
+  validation: ValidationStats;
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -288,6 +368,142 @@ export function impliedValue(
   const base = protocol.tvl_usd * catMultiple;
   const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));
   return { implied, catMultiple, growthPct, growthMult, maturityMult, chainMult, age };
+}
+
+/** The model's own validation, computed from this snapshot alone — never hand-written. */
+export interface ValidationStats {
+  /** Live-token protocols scored in the leave-one-out test. */
+  live_n: number;
+  /** Median leave-one-out miss: median of max(pred/actual, actual/pred) over the live set. */
+  loo_median_miss: number | null;
+  /** Share of the live set the leave-one-out prediction lands within 3x of the market cap, in per cent. */
+  loo_within3_pct: number | null;
+  loo_within2_pct: number | null;
+  /** The same two numbers for the flat baseline: TVL x the overall median multiple, no adjustments. */
+  flat_median_miss: number | null;
+  flat_within3_pct: number | null;
+  /** The flat baseline recomputed leave-one-out, so it is compared like-for-like with the model. */
+  flat_loo_median_miss: number | null;
+  flat_loo_within3_pct: number | null;
+  /** Live-token protocols in the walk-forward test set (listed after the cutoff). */
+  wf_n: number;
+  wf_median_miss: number | null;
+  wf_within3_pct: number | null;
+  /** The listed_at date that splits the walk-forward train set from its test set. */
+  wf_cutoff: string | null;
+  /** Scatter points, log10 TVL against log10 market cap, sampled to keep data.js small. */
+  scatter_live: { x: number; y: number }[];
+  /** Scatter points, log10 TVL against log10 implied value, sampled the same way. */
+  scatter_pre: { x: number; y: number }[];
+  /** The fitted curve in the same log10 space: y = log10(overall multiple) + x. */
+  curve: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/** The multiples calibrated from every live protocol except one slug. */
+function calibrateWithout(snapshot: Snapshot, model: ModelConstants, exclude: string): { overall: number; byCategory: Map<string, CategoryMultiple> } {
+  return calibrateMultiples({ ...snapshot, protocols: snapshot.protocols.filter((p) => p.slug !== exclude) }, model);
+}
+
+/** How far a prediction misses, as a factor: 1 is exact, 3 means three times too high or too low. */
+function missFactor(pred: number, actual: number): number {
+  return Math.max(pred / actual, actual / pred);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Validate the model against the snapshot's own live-token protocols: leave-one-out (each live
+ * protocol predicted from a calibration that never saw it), a flat-multiple baseline for the same
+ * set, and a walk-forward split (multiples calibrated on the earlier-listed half, tested on the
+ * later half). All three are computed here, from this snapshot, at run time.
+ */
+export function validateModel(snapshot: Snapshot, model: ModelConstants, board: BoardRow[]): ValidationStats {
+  const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
+  const calibrated = calibrateMultiples(snapshot, model);
+  const looMiss: number[] = [];
+  const flatMiss: number[] = [];
+  const flatLooMiss: number[] = [];
+  for (const p of live) {
+    const cal = calibrateWithout(snapshot, model, p.slug);
+    const pred = impliedValue(p, snapshot.as_of, model, cal).implied;
+    looMiss.push(missFactor(pred, p.mcap_usd!));
+    flatMiss.push(missFactor(p.tvl_usd * calibrated.overall, p.mcap_usd!));
+    flatLooMiss.push(missFactor(p.tvl_usd * cal.overall, p.mcap_usd!));
+  }
+  const pctWithin = (misses: number[], k: number): number | null =>
+    misses.length === 0 ? null : Math.round((misses.filter((m) => m <= k).length / misses.length) * 1000) / 10;
+  const med = (xs: number[]): number | null => {
+    const m = median(xs);
+    return m === null ? null : round2(m);
+  };
+  // Walk-forward: the earlier-listed half calibrates, the later-listed half is the test.
+  const dated = live.filter((p) => p.listed_at !== null).sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : a.listed_at! > b.listed_at! ? 1 : 0));
+  let wfMiss: number[] = [];
+  let wfCutoff: string | null = null;
+  if (dated.length >= 20) {
+    const half = Math.floor(dated.length / 2);
+    const train = dated.slice(0, half);
+    const test = dated.slice(half);
+    wfCutoff = test[0]!.listed_at;
+    const calTrain = calibrateMultiples({ ...snapshot, protocols: train }, model);
+    wfMiss = test.map((p) => missFactor(impliedValue(p, snapshot.as_of, model, calTrain).implied, p.mcap_usd!));
+  }
+  // Scatter: live tokens at their market cap, pre-token rows at their implied value, sampled.
+  const log10 = (n: number): number => Math.log10(n);
+  const stride = (n: number, max: number): number => (n <= max ? 1 : Math.ceil(n / max));
+  const liveStep = stride(live.length, 120);
+  const scatterLive = live
+    .filter((_, i) => i % liveStep === 0)
+    .map((p) => ({ x: round2(log10(p.tvl_usd)), y: round2(log10(p.mcap_usd!)) }));
+  const preStep = stride(board.length, 60);
+  const scatterPre = board
+    .filter((_, i) => i % preStep === 0)
+    .map((r) => ({ x: round2(log10(r.tvl_usd)), y: round2(log10(r.implied_value_usd)) }));
+  const allX = [...scatterLive, ...scatterPre].map((pt) => pt.x);
+  const x0 = Math.min(...allX);
+  const x1 = Math.max(...allX);
+  const logOverall = log10(calibrated.overall);
+  return {
+    live_n: live.length,
+    loo_median_miss: med(looMiss),
+    loo_within3_pct: pctWithin(looMiss, 3),
+    loo_within2_pct: pctWithin(looMiss, 2),
+    flat_median_miss: med(flatMiss),
+    flat_within3_pct: pctWithin(flatMiss, 3),
+    flat_loo_median_miss: med(flatLooMiss),
+    flat_loo_within3_pct: pctWithin(flatLooMiss, 3),
+    wf_n: wfMiss.length,
+    wf_median_miss: med(wfMiss),
+    wf_within3_pct: pctWithin(wfMiss, 3),
+    wf_cutoff: wfCutoff,
+    scatter_live: scatterLive,
+    scatter_pre: scatterPre,
+    curve: { x0: round2(x0), y0: round2(logOverall + x0), x1: round2(x1), y1: round2(logOverall + x1) },
+  };
+}
+
+/** The four live-token comparables nearest a row by TVL, same category first. */
+export function comparablesFor(
+  row: BoardRow,
+  live: LiveRow[],
+  calibrated: { overall: number; byCategory: Map<string, CategoryMultiple> },
+): Comparable[] {
+  const near = (a: LiveRow, b: LiveRow): number =>
+    Math.abs(Math.log10(a.tvl_usd) - Math.log10(row.tvl_usd)) - Math.abs(Math.log10(b.tvl_usd) - Math.log10(row.tvl_usd));
+  const sameCat = live.filter((p) => p.category === row.category).sort(near);
+  const others = live.filter((p) => p.category !== row.category).sort(near);
+  return [...sameCat, ...others].slice(0, 4).map((p) => {
+    const curve = Math.max(1, Math.round(p.tvl_usd * multipleFor(p.category, calibrated)));
+    return {
+      name: p.name,
+      tvl_usd: p.tvl_usd,
+      mcap_usd: p.mcap_usd ?? 0,
+      curve_usd: curve,
+      ratio: Math.round(((p.mcap_usd ?? 0) / curve) * 100) / 100,
+    };
+  });
 }
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
@@ -535,12 +751,9 @@ function chainOf(p: SnapshotProtocol): string {
   return p.chains.length > 0 ? p.chains[0]! : 'its main chain';
 }
 
-/** How much capital one farm position needs, from the protocol's own TVL. */
-function capitalFor(p: SnapshotProtocol): number {
-  if (p.tvl_usd >= 5_000_000_000) return 250;
-  if (p.tvl_usd >= 1_000_000_000) return 150;
-  if (p.tvl_usd >= 100_000_000) return 100;
-  return 50;
+/** How much capital one farm position needs: the flat $1,000 deposit the board's economics use. */
+function capitalFor(_p: SnapshotProtocol): number {
+  return DEPOSIT_USD;
 }
 
 /** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
@@ -696,7 +909,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 }
 
 /** A board row's compact form for data.js, with the farm plan generated in the page. */
-export function radarRow(row: BoardRow): RadarRow {
+export function radarRow(row: BoardRow, comparables: Comparable[]): RadarRow {
   return {
     rank: row.rank,
     slug: row.slug,
@@ -719,6 +932,10 @@ export function radarRow(row: BoardRow): RadarRow {
     category_rank: row.category_rank,
     category_size: row.category_size,
     signals: row.signals,
+    economics: econFor(row, row.implied_value_usd, row.age_days),
+    comparables,
+    farm_steps: farmSteps(row, row.age_days).map(stepText),
+    hold_days: holdDaysFor(row.age_days),
   };
 }
 
@@ -743,8 +960,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     overall_multiple: calibrated.overall,
     category_multiples: categoryMultiples,
     watchlist: snapshot.watchlist,
-    rows: board.map(radarRow),
+    rows: board.map((r) => radarRow(r, comparablesFor(r, live, calibrated))),
     live,
+    validation: validateModel(snapshot, model, board),
   };
   return { board, radar };
 }
