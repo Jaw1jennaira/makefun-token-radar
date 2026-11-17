@@ -446,7 +446,8 @@ export interface ValidationStats {
   /** Share of live tokens whose market cap falls inside the P25–P75 / P10–P90 band (LOO). */
   band_p25_hold_pct: number | null;
   band_p90_hold_pct: number | null;
-  /** Scatter points, log10 TVL against log10 market cap, sampled to keep data.js small. */
+  /** The three worst leave-one-out misses, named: where the model is most wrong. */
+  worst_loo: { name: string; miss: number; pred_usd: number; actual_usd: number }[];
   scatter_live: { x: number; y: number }[];
   /** Scatter points, log10 TVL against log10 implied value, sampled the same way. */
   scatter_pre: { x: number; y: number }[];
@@ -592,6 +593,16 @@ export function validateModel(snapshot: Snapshot, model: ModelConstants, board: 
   const FULL: VariantTerms = { tilt: true, growth: true, maturity: false, chains: false };
   const full = evalVariant(FULL);
   const flat = evalVariant('flat');
+  // The three worst leave-one-out misses, named.
+  const worstLoo = live
+    .map((p) => {
+      const train = live.filter((q) => q.slug !== p.slug);
+      const fit = fitPowerLawOn(train, model.prior_weight);
+      const pred = predictVariant(p, fit, FULL, snapshot.as_of, model);
+      return { name: p.name, miss: round2(missFactor(pred, p.mcap_usd!)), pred_usd: pred, actual_usd: p.mcap_usd! };
+    })
+    .sort((a, b) => b.miss - a.miss)
+    .slice(0, 3);
   const ablationDefs: { label: string; terms: VariantTerms | 'flat'; kept: boolean; note: string }[] = [
     { label: 'Flat TVL multiple', terms: 'flat', kept: false, note: 'baseline: TVL x overall median, no adjustments' },
     { label: 'Size curve only', terms: { tilt: false, growth: false, maturity: false, chains: false }, kept: false, note: 'power law alone, no category tilt, no growth' },
@@ -658,6 +669,7 @@ export function validateModel(snapshot: Snapshot, model: ModelConstants, board: 
     band_p90_factor: band90,
     band_p25_hold_pct: hold(0.6745),
     band_p90_hold_pct: hold(1.2816),
+    worst_loo: worstLoo,
     scatter_live: scatterLive,
     scatter_pre: scatterPre,
     curve: { x0: round2(x0), y0: round2(calibrated.intercept + calibrated.slope * x0), x1: round2(x1), y1: round2(calibrated.intercept + calibrated.slope * x1) },

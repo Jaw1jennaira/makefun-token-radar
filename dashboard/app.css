@@ -66,6 +66,8 @@ a { color: var(--accent); }
 /* Lede: one line of claim, one line of method, six facts in a row. */
 .lede { padding: var(--step-3) 0 var(--step-2); }
 .lede-main p { color: var(--muted); margin-top: var(--step-1); font-size: 14px; }
+.best-farms { font-size: 13px; color: var(--muted); margin-top: var(--step-1); }
+.best-farms::before { content: '★ '; color: var(--amber); }
 .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--step-3); margin-top: var(--step-2); }
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control);
@@ -75,11 +77,11 @@ a { color: var(--accent); }
 .stat b { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Methodology panel: formula, curve fit, validation, one honest verdict. */
-.method { padding: var(--step-4) var(--step-5); margin-bottom: var(--step-3); }
+.method { padding: var(--step-3) var(--step-5); margin-bottom: var(--step-3); }
 .method h2 { margin-bottom: var(--step-2); }
-.method-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr); gap: var(--step-4); }
-.method-col h3 { margin-bottom: var(--step-2); }
-.method-steps { margin: 0 0 var(--step-3); padding-left: 20px; display: grid; gap: var(--step-2); font-size: 14px; }
+.method-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr); gap: var(--step-3); }
+.method-col h3 { margin-bottom: var(--step-1); }
+.method-steps { margin: 0 0 var(--step-2); padding-left: 20px; display: grid; gap: 6px; font-size: 13px; }
 .method table { font-size: 13px; }
 .method tbody td { padding: var(--step-2) var(--step-3); }
 .method tbody tr { cursor: default; }
@@ -90,7 +92,8 @@ a { color: var(--accent); }
 .dot.live { background: var(--accent); }
 .dot.pre { background: var(--amber); }
 .dot.curve { background: var(--ink); border-radius: 0; width: 12px; height: 2px; vertical-align: middle; }
-.method-verdict { margin-top: var(--step-3); padding-top: var(--step-2); border-top: 1px solid var(--border); font-size: 15px; line-height: 1.6; max-width: 110ch; }
+.method-verdict { margin-top: var(--step-2); padding-top: var(--step-2); border-top: 1px solid var(--border); font-size: 15px; line-height: 1.6; max-width: 110ch; }
+.method .button { margin-top: var(--step-2); }
 /* Farm verdict pills and filter chips. */
 .verdict { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .verdict-worth { background: var(--accent-soft); color: var(--accent); }
@@ -151,7 +154,7 @@ thead th {
 }
 thead th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; }
 thead th button:hover { color: var(--ink); }
-tbody td { padding: 5px var(--step-3); border-bottom: 1px solid var(--border); vertical-align: middle; }
+tbody td { padding: 4px var(--step-3); border-bottom: 1px solid var(--border); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr { cursor: pointer; }
 tbody tr:hover, tbody tr:focus-visible { background: var(--surface-2); }
@@ -164,6 +167,27 @@ td.num, th.num { text-align: right; }
 .implied { display: grid; gap: 3px; min-width: 150px; }
 .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+/* Band bar: the light segment is a row's P10–P90 band on a shared log scale, the dark tick its implied value. */
+.bandbar { position: relative; height: 6px; background: var(--surface-2); border-radius: 3px; }
+.bandbar .band { position: absolute; top: 0; height: 6px; background: #c9d4c2; border-radius: 3px; }
+.bandbar .mark { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--ink); border-radius: 1px; }
+/* One-line net equation, in the detail page and the method page. */
+.net-equation {
+  font-family: var(--font-num); font-size: 13px; background: var(--surface-2);
+  border-radius: var(--radius-control); padding: var(--step-3) var(--step-4);
+  overflow-wrap: break-word; color: var(--ink); margin-bottom: var(--step-2);
+}
+/* Full method page: same panels, longer tables, one big scatter. */
+.method-page { padding: var(--step-5); margin-bottom: var(--step-4); }
+.method-page h2 { margin-bottom: var(--step-2); }
+.method-page p { color: var(--muted); max-width: 100ch; margin-bottom: var(--step-3); font-size: 14px; }
+.method-page table { font-size: 13px; }
+.method-page tbody td { padding: var(--step-2) var(--step-3); }
+.method-page tbody tr { cursor: default; }
+.method-page tbody tr:hover { background: transparent; }
+.method-page .net-equation { margin-bottom: var(--step-3); }
+.method-page .limits { margin: 0; padding-left: 20px; display: grid; gap: var(--step-2); font-size: 14px; }
+.method-page .limits ul { margin: var(--step-1) 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .status {
   display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 650;
   background: var(--accent-soft); color: var(--accent); white-space: nowrap;
@@ -209,7 +233,7 @@ td.num, th.num { text-align: right; }
 .model h2 { margin-bottom: var(--step-2); }
 .model p { color: var(--muted); max-width: 76ch; margin-bottom: var(--step-3); }
 .formula {
-  font-family: var(--font-num); font-size: 13px; background: var(--surface-2);
+  font-family: var(--font-num); font-size: 12px; background: var(--surface-2);
   border-radius: var(--radius-control); padding: var(--step-3) var(--step-4);
   overflow-wrap: break-word;
 }
