@@ -48,12 +48,14 @@
     return gaps;
   }
   // The dashboard recomputes a row's implied value from the same power law the model used:
-  // 10^(intercept + slope*log10(TVL) + log10(tilt)) x growth. It must match board.json.
+  // 10^(intercept + slope*log10(TVL) + residual) x growth, with the rounded residual the
+  // category carries. It must match board.json.
   function impliedOf(row, model) {
     var pl = DATA.power_law || { intercept: 3.0247, slope: 0.5223 };
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
-    var tilt = row.category_tilt === undefined ? 1 : row.category_tilt;
-    return Math.max(1, Math.round(Math.pow(10, pl.intercept + pl.slope * Math.log10(row.tvl_usd) + Math.log10(tilt)) * (1 + (growth / 100) * model.growth_weight)));
+    var entry = categoryEntry(row.category);
+    var resid = entry ? entry.residual : (row.category_tilt === undefined ? 0 : Math.log10(row.category_tilt));
+    return Math.max(1, Math.round(Math.pow(10, pl.intercept + pl.slope * Math.log10(row.tvl_usd) + resid) * (1 + (growth / 100) * model.growth_weight)));
   }
   function categoryEntry(category) {
     var found = (DATA.category_multiples || []).filter(function (c) { return c.category === category; })[0];
@@ -262,10 +264,10 @@
         el('div', { class: 'method-col' },
           el('h3', { text: 'The formula' }),
           el('ol', { class: 'method-steps' },
-            el('li', null, el('b', { text: 'Size curve. ' }), 'Value grows as TVL^' + pl.slope.toFixed(2) + ': a protocol with 100x the TVL is worth ~11x the value, not 100x. Fit on this snapshot\u2019s 128 live tokens.'),
-            el('li', null, el('b', { text: 'Category tilt. ' }), 'Each category tilts the curve by its shrunk median log-residual (prior weight ' + m.prior_weight + '): CEX +33%, Liquid Staking −23%, most within ±10%.'),
-            el('li', null, el('b', { text: 'Growth carry. ' }), 'The last 7 days of TVL growth move the value, capped at ' + m.growth_floor + '% to +' + m.growth_cap + '%, at weight ' + m.growth_weight + '.'),
-            el('li', null, el('b', { text: 'Removed. ' }), 'Maturity and chain count were tested and removed — both made leave-one-out worse. See the full method.')
+            el('li', null, el('b', { text: 'Size curve. ' }), 'Value grows as TVL^' + pl.slope.toFixed(2) + ': 100x the TVL is worth ~11x the value, not 100x. Fit on 128 live tokens.'),
+            el('li', null, el('b', { text: 'Category tilt. ' }), 'Shrunk median log-residual (prior weight ' + m.prior_weight + '): CEX +33%, Liquid Staking −23%, most within ±10%.'),
+            el('li', null, el('b', { text: 'Growth carry. ' }), '7d TVL growth moves the value, capped at ' + m.growth_floor + '% to +' + m.growth_cap + '%, weight ' + m.growth_weight + '.'),
+            el('li', null, el('b', { text: 'Removed. ' }), 'Maturity and chains were tested and removed — both made leave-one-out worse.')
           ),
           el('div', { class: 'formula' }, formula)
         ),
@@ -292,16 +294,15 @@
               el('tbody', null,
                 vrow('LOO n=' + v.live_n, v.loo_median_miss, v.loo_within3_pct, v.loo_within2_pct),
                 vrow('Flat TVL', v.flat_loo_median_miss, v.flat_loo_within3_pct, null),
-                vrow('Walk-fwd n=' + v.wf_n, v.wf_median_miss, v.wf_within3_pct, null),
-                vrow('Flat walk-fwd', v.flat_wf_median_miss, v.flat_wf_within3_pct, null)
+                vrow('Walk-fwd', v.wf_median_miss, v.wf_within3_pct, null),
+                vrow('Flat WF', v.flat_wf_median_miss, v.flat_wf_within3_pct, null)
               )
             )
           ),
-          el('p', { class: 'sub', text: 'LOO predicts each live token from a calibration that never saw it; walk-forward trains before ' + v.wf_cutoff + ', tests after. Bands: P25–P75 (×/÷' + v.band_p25_factor + ') holds ' + v.band_p25_hold_pct + '% of live tokens; P10–P90 (×/÷' + v.band_p90_factor + ') holds ' + v.band_p90_hold_pct + '%.' })
+          el('p', { class: 'sub', text: 'LOO predicts each live token from a calibration that never saw it; walk-forward trains before ' + v.wf_cutoff + ', tests after (n=' + v.wf_n + '). Bands: P25–P75 (×/÷' + v.band_p25_factor + ') holds ' + v.band_p25_hold_pct + '%; P10–P90 (×/÷' + v.band_p90_factor + ') holds ' + v.band_p90_hold_pct + '%.' })
         )
       ),
-      el('p', { class: 'method-verdict', text: verdict }),
-      el('p', null, el('button', { class: 'button', type: 'button', text: 'Read the full method →', onclick: function () { state.method = true; writeHash(); render(); } }))
+      el('p', { class: 'method-verdict' }, verdict + ' ', el('button', { class: 'button', type: 'button', text: 'Read the full method →', onclick: function () { state.method = true; writeHash(); render(); } }))
     );
   }
 
@@ -596,7 +597,7 @@
     }
     var pl = DATA.power_law || { intercept: 3.0247, slope: 0.5223 };
     var sizeCurve = Math.pow(10, pl.intercept + pl.slope * Math.log10(row.tvl_usd));
-    var netEq = fmtUsd(row.tvl_usd) + ' TVL → curve ' + fmtUsd(sizeCurve) + ' × tilt ' + (row.category_tilt === undefined ? 1 : row.category_tilt).toFixed(2) + '× × growth ' + (row.growth_multiplier === undefined ? 1 : row.growth_multiplier).toFixed(2) + '× = ' + fmtUsd(row.implied_value_usd);
+    var netEq = fmtUsd(row.tvl_usd) + ' TVL → curve ' + fmtUsd(sizeCurve) + ' × tilt ' + (row.category_tilt === undefined ? 1 : row.category_tilt).toFixed(3) + '× × growth ' + (row.growth_multiplier === undefined ? 1 : row.growth_multiplier).toFixed(3) + '× = ' + fmtUsd(row.implied_value_usd);
     var depRow = function (label, v1, v10) {
       return el('tr', null, el('td', { text: label }), el('td', { class: 'num', text: v1 }), el('td', { class: 'num', text: v10 }));
     };
@@ -634,7 +635,7 @@
           el('section', { class: 'panel chart detail-sec' },
             el('h2', { text: 'How the value is built' }),
             el('p', { class: 'net-equation', text: netEq }),
-            el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(impliedOf(row, DATA.model)) + (impliedOf(row, DATA.model) === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price, and the protocol records no token: it may still have one the snapshot does not carry.' })
+            el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ' scores every protocol with the same function. Recomputed here as ' + fmtUsd(impliedOf(row, DATA.model)) + (Math.abs(impliedOf(row, DATA.model) - row.implied_value_usd) <= Math.max(1, row.implied_value_usd * 0.001) ? ' — the same number board.json carries.' : ' — which differs from the board: the data would be stale.') + ' An estimate, not a price.' })
           ),
           el('section', { class: 'panel chart detail-sec' },
             el('h2', { text: 'Record in the snapshot' }),

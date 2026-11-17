@@ -83,7 +83,7 @@ a { color: var(--accent); }
 .method-col h3 { margin-bottom: var(--step-1); }
 .method-steps { margin: 0 0 var(--step-2); padding-left: 20px; display: grid; gap: 6px; font-size: 13px; }
 .method table { font-size: 13px; }
-.method tbody td { padding: var(--step-2) var(--step-3); }
+.method tbody td { padding: 6px var(--step-3); }
 .method tbody tr { cursor: default; }
 .method tbody tr:hover { background: transparent; }
 .method .formula { margin-bottom: 0; }
@@ -93,7 +93,7 @@ a { color: var(--accent); }
 .dot.pre { background: var(--amber); }
 .dot.curve { background: var(--ink); border-radius: 0; width: 12px; height: 2px; vertical-align: middle; }
 .method-verdict { margin-top: var(--step-2); padding-top: var(--step-2); border-top: 1px solid var(--border); font-size: 15px; line-height: 1.6; max-width: 110ch; }
-.method .button { margin-top: var(--step-2); }
+.method-verdict .button { padding: 4px 12px; font-size: 13px; vertical-align: middle; margin-left: 6px; }
 /* Farm verdict pills and filter chips. */
 .verdict { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .verdict-worth { background: var(--accent-soft); color: var(--accent); }
@@ -113,11 +113,11 @@ a { color: var(--accent); }
 .detail-sec h2 { margin-bottom: var(--step-1); }
 .detail-sec p { color: var(--muted); margin-bottom: var(--step-3); max-width: 72ch; font-size: 14px; }
 .detail-sec table { font-size: 13px; }
-.detail-sec tbody td { padding: var(--step-2) var(--step-3); }
+.detail-sec tbody td { padding: 6px var(--step-3); }
 .detail-sec tbody tr { cursor: default; }
 .detail-sec tbody tr:hover { background: transparent; }
 .detail-sec .kv td:first-child { color: var(--muted); width: 40%; }
-.timeline { display: flex; flex-wrap: wrap; gap: var(--step-2); margin-bottom: var(--step-3); }
+.timeline { display: flex; flex-wrap: wrap; gap: var(--step-2); margin-bottom: var(--step-2); }
 .timeline span { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 650; }
 .signals.flat { padding: 0; }
 
@@ -253,7 +253,7 @@ td.num, th.num { text-align: right; }
 .equation div { display: flex; justify-content: space-between; gap: var(--step-3); padding: var(--step-3); background: var(--surface-2); border-radius: var(--radius-control); }
 .equation span { color: var(--muted); font-size: 13px; }
 .equation b { font-weight: 650; }
-.steps { margin: 0; padding-left: 22px; display: grid; gap: var(--step-3); }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
 .steps li { line-height: 1.55; font-size: 14px; }
 .steps .cost { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
 .note { padding: var(--step-4) var(--step-5); color: var(--muted); font-size: 13px; }
