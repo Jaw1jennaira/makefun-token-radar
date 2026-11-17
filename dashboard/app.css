@@ -106,18 +106,19 @@ a { color: var(--accent); }
 .farmbook p { color: var(--muted); margin-bottom: var(--step-3); max-width: 110ch; font-size: 14px; }
 .farmbook .farmbook-net { margin: var(--step-3) 0 0; color: var(--ink); font-weight: 600; }
 /* Detail page: a full page, not a popup. */
-.detail-lede { padding-top: var(--step-3); }
-.detail-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr); gap: var(--step-4); margin-top: var(--step-4); }
+.detail-lede { padding-top: 8px; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr); gap: var(--step-4); margin-top: 12px; }
 .detail-col { display: grid; gap: var(--step-4); align-content: start; }
-.detail-sec { padding: var(--step-4) var(--step-5); }
+.detail-sec { padding: 12px var(--step-5); }
 .detail-sec h2 { margin-bottom: var(--step-1); }
 .detail-sec p { color: var(--muted); margin-bottom: var(--step-3); max-width: 72ch; font-size: 14px; }
 .detail-sec table { font-size: 13px; }
-.detail-sec tbody td { padding: 6px var(--step-3); }
+.detail-sec tbody td { padding: 5px var(--step-3); }
 .detail-sec tbody tr { cursor: default; }
 .detail-sec tbody tr:hover { background: transparent; }
 .detail-sec .kv td:first-child { color: var(--muted); width: 40%; }
-.timeline { display: flex; flex-wrap: wrap; gap: var(--step-2); margin-bottom: var(--step-2); }
+.detail-sec .net-equation { max-width: none; }
+.timeline { display: flex; flex-wrap: wrap; gap: var(--step-2); margin-bottom: 4px; }
 .timeline span { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 650; }
 .signals.flat { padding: 0; }
 
@@ -253,9 +254,9 @@ td.num, th.num { text-align: right; }
 .equation div { display: flex; justify-content: space-between; gap: var(--step-3); padding: var(--step-3); background: var(--surface-2); border-radius: var(--radius-control); }
 .equation span { color: var(--muted); font-size: 13px; }
 .equation b { font-weight: 650; }
-.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
-.steps li { line-height: 1.55; font-size: 14px; }
-.steps .cost { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+.steps li { line-height: 1.42; font-size: 14px; }
+.steps .cost { display: block; color: var(--muted); font-size: 13px; margin-top: 0; }
 .note { padding: var(--step-4) var(--step-5); color: var(--muted); font-size: 13px; }
 
 @media (max-width: 900px) {
